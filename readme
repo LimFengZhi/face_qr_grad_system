@@ -1,0 +1,126 @@
+# Face and QR Graudate Scan Flask Application
+
+A Face and QR Graudate system supporting multiple algorithms including HOG + Dlib, DeepFace, InsightFace, and MTCNN + FaceNet. Features include QR code scanning, text-to-speech, and email notifications.
+
+## Features
+
+- 🎯 Multiple face recognition algorithms (HOG + Dlib, DeepFace, InsightFace, MTCNN + FaceNet)
+- 📷 Real-time camera-based face detection
+- 📱 QR code scanning support
+- 🔊 Text-to-speech notifications
+- 📧 Email notification system
+- 🎓 Student database management
+
+## Prerequisites
+
+- **Python 3.8.8** (recommended)
+- **Git** installed on your system
+- **CMake** and **Visual Studio Build Tools** (for dlib compilation)
+
+## Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone <your-repo-url>
+cd reasearch_face-flusk_basic
+```
+
+### 2. Create and Activate Virtual Environment
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# Windows (PowerShell)
+.\venv\Scripts\Activate.ps1
+
+# Windows (CMD)
+.\venv\Scripts\activate.bat
+
+# Linux/Mac
+source venv/bin/activate
+```
+
+### 3. Install dlib Dependencies
+
+Follow the guide: [How to Install Face Recognition in Python on Windows](https://www.geeksforgeeks.org/installation-guide/how-to-install-face-recognition-in-python-on-windows/)
+
+### 4. Install Python Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 5. Troubleshooting InsightFace Installation
+
+If you encounter issues with InsightFace, install manually from the provided wheel:
+
+```bash
+pip install installation_tools/insightface-0.7.3-cp310-cp310-win_amd64.whl
+```
+
+## Usage
+
+### Run the Application
+
+```bash
+python app.py
+```
+
+The application will start a Flask server. Open your browser and navigate to:
+```
+http://localhost:5000
+```
+
+## Project Structure
+
+```
+reasearch_face-flusk_basic/
+├── app.py                          # Main Flask application
+├── requirements.txt                # Python dependencies
+├── train.ipynb                     # Training notebook for face encodings
+├── data/
+│   ├── student_list.csv            # Student database
+│   ├── encodings/                  # Pre-trained face encodings
+│   ├── Image/                      # Student images
+│   ├── qr_codes/                   # Generated QR codes
+│   └── test_set/                   # Test images
+├── img_processing_class/
+│   ├── fr_algorithm_class/         # Face recognition algorithms
+│   │   ├── fr_deepface.py
+│   │   ├── fr_hog_dlib.py
+│   │   ├── fr_insightface.py
+│   │   └── fr_mtcnn_facenet.py
+│   └── utility_class/              # Utility modules
+│       ├── adaptive_preprocessor.py
+│       ├── box_helper.py
+│       ├── camera.py
+│       ├── email_sender.py
+│       ├── qr_code_scanner.py
+│       ├── student_database.py
+│       └── text_to_speach.py
+├── installation_tools/             # Manual installation files
+├── static/                         # CSS and JavaScript files
+└── templates/                      # HTML templates
+```
+
+## Supported Face Recognition Algorithms
+
+| Algorithm | Description |
+|-----------|-------------|
+| HOG + Dlib | Histogram of Oriented Gradients with Dlib |
+| DeepFace | Deep learning-based (Facenet512 + RetinaFace) |
+| InsightFace | Buffalo model for face recognition |
+| MTCNN + FaceNet | Multi-task CNN with FaceNet embeddings |
+
+## Notes
+
+- Ensure your webcam is connected and accessible
+- Face encodings must be generated before running recognition (use `train.ipynb`)
+- Adjust confidence/threshold values in `app.py` for better accuracy
+
+## License
+
+[FZ]
