@@ -9,8 +9,11 @@ from img_processing_class.utility_class.adaptive_preprocessor import AdaptivePre
 from img_processing_class.utility_class.qr_code_scanner import QRCodeScanner
 from img_processing_class.utility_class.box_helper import draw_detections
 from img_processing_class.utility_class.text_to_speach import TextToSpeech
-from img_processing_class.utility_class.student_database import StudentDatabase, init_database
+from img_processing_class.utility_class.student_database import init_database
 from img_processing_class.utility_class.camera import Camera
+from img_processing_class.fr_algorithm_class.fr_insightface import FaceRecognitionInsightFace
+from img_processing_class.fr_algorithm_class.fr_hog_dlib import FaceRecognitionHogDlib
+from img_processing_class.fr_algorithm_class.fr_deepface import FaceRecognitionDeepFace
 
 app = Flask(__name__)
 
@@ -19,7 +22,7 @@ class AppState:
     def __init__(self):
         self.queue_started = False
         self.current_queue_index = 0
-        self.verification_state = 'waiting'  # 'waiting' or 'displaying'
+        self.verification_state = 'waiting'
         self.display_start_time = 0
         self.queue_list = []
         self.current_algorithm = "HOG + Dlib"
@@ -42,8 +45,8 @@ executor = ThreadPoolExecutor(max_workers=4)
 
 def load_hog_dlib():
     try:
-        from img_processing_class.fr_algorithm_class.fr_hog_dlib import FaceRecognitionHogDlib
-        model = FaceRecognitionHogDlib(file_path="encodings/hb_encoding.pkl", confidence=0.6)
+
+        model = FaceRecognitionHogDlib(file_path="data/encodings/hb_encoding.pkl", confidence=0.6)
         return ("HOG + Dlib", model)
     except Exception as e:
         print(f"HOG + Dlib failed: {e}")
@@ -51,9 +54,8 @@ def load_hog_dlib():
 
 def load_deepface():
     try:
-        from img_processing_class.fr_algorithm_class.fr_deepface import FaceRecognitionDeepFace
         model = FaceRecognitionDeepFace(
-            file_path="encodings/deepface_facenet512.pkl",
+            file_path="data/encodings/deepface_facenet512.pkl",
             threshold=0.68, model_name='Facenet512', detector_backend='retinaface'
         )
         return ("DeepFace", model)
@@ -63,9 +65,8 @@ def load_deepface():
 
 def load_insightface():
     try:
-        from img_processing_class.fr_algorithm_class.fr_insightface import FaceRecognitionInsightFace
         model = FaceRecognitionInsightFace(
-            file_path="encodings/insightface_buffalo.pkl",
+            file_path="data/encodings/insightface_buffalo.pkl",
             threshold=0.3, model_name='buffalo_s', ctx_id=-1
         )
         return ("InsightFace", model)
@@ -76,7 +77,7 @@ def load_insightface():
 def load_mtcnn_facenet():
     try:
         from img_processing_class.fr_algorithm_class.fr_mtcnn_facenet import FaceRecognitionMTCNNFaceNet
-        model = FaceRecognitionMTCNNFaceNet(file_path="encodings/mtcnn_facenet.pkl", threshold=0.4)
+        model = FaceRecognitionMTCNNFaceNet(file_path="data/encodings/mtcnn_facenet.pkl", threshold=0.4)
         return ("MTCNN + FaceNet", model)
     except Exception as e:
         print(f"MTCNN + FaceNet failed: {e}")
@@ -103,7 +104,7 @@ if model:
 preprocessor = AdaptivePreprocessor()
 qr_scanner = QRCodeScanner()
 tts = TextToSpeech()
-db = init_database("student_list.csv", "students.db")
+db = init_database("data/student_list.csv", "data/students.db")
 
 available_algorithms = [name for name, model in all_models.items() if model is not None]
 print(f"✅ Ready! Available: {available_algorithms}")
@@ -190,7 +191,7 @@ def detect_qr_pipeline(frame):
 
 def find_student_image(student_id):
     for ext in ['.jpg', '.png', '.jpeg', '.JPG', '.PNG']:
-        img_path = f"Image/{student_id}{ext}"
+        img_path = f"data/Image/{student_id}{ext}"
         if os.path.exists(img_path):
             return img_path
     return None
@@ -454,10 +455,10 @@ def reset_attendance():
         state.verified_student = None
     return jsonify({'success': True})
 
-@app.route('/Image/<path:filename>')
+@app.route('/data/Image/<path:filename>')
 def serve_image(filename):
     from flask import send_from_directory
-    return send_from_directory('Image', filename)
+    return send_from_directory('data/Image', filename)
 
 if __name__ == '__main__':
     app.run(debug=False, threaded=True, host='0.0.0.0', port=5000)
