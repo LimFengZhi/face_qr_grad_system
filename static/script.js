@@ -117,7 +117,14 @@ async function updateStatus() {
                 html += `<img src="${data.verified_img}" alt="Student">`;
             }
             html += `<h3>✅ ${data.verified_student.name}</h3>`;
-            html += `<p>${data.verified_student.student_id} | ${data.verified_student.faculty}</p>`;
+            html += `<div class="student-details">`;
+            html += `<p><strong>ID:</strong> ${data.verified_student.student_id}</p>`;
+            html += `<p><strong>Faculty:</strong> ${data.verified_student.faculty || 'N/A'}</p>`;
+            html += `<p><strong>Course:</strong> ${data.verified_student.course || 'N/A'}</p>`;
+            if (data.verified_student.cgpa) {
+                html += `<p><strong>CGPA:</strong> ${data.verified_student.cgpa}</p>`;
+            }
+            html += `</div>`;
             html += `<div class="countdown">⏱️ ${data.remaining}s</div>`;
             verifiedCard.innerHTML = html;
         } else if (!data.queue_started) {

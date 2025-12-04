@@ -205,11 +205,38 @@ h1 {
 .student-card h3 {
     color: #2ecc71;
     font-size: 24px;
+    margin-bottom: 15px;
 }
 
 .student-card p {
     color: #aaa;
     margin-top: 5px;
+}
+
+.student-details {
+    background: #1a1a2e;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 15px 0;
+    text-align: left;
+}
+
+.student-details p {
+    margin: 8px 0;
+    color: #ddd;
+    font-size: 14px;
+}
+
+.student-details p strong {
+    color: #667eea;
+    min-width: 80px;
+    display: inline-block;
+}
+
+.countdown {
+    font-size: 48px;
+    color: #667eea;
+    margin-top: 20px;
 }
 
 .countdown {
