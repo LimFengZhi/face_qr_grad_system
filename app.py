@@ -9,7 +9,7 @@ from img_processing_class.utility_class.adaptive_preprocessor import AdaptivePre
 from img_processing_class.utility_class.qr_code_scanner import QRCodeScanner
 from img_processing_class.utility_class.box_helper import draw_detections
 from img_processing_class.utility_class.text_to_speach import TextToSpeech
-from img_processing_class.utility_class.student_database import init_database
+from img_processing_class.utility_class.student_database import init_database, graduation_level
 from img_processing_class.utility_class.camera import Camera
 from img_processing_class.fr_algorithm_class.fr_insightface import FaceRecognitionInsightFace
 from img_processing_class.fr_algorithm_class.fr_hog_dlib import FaceRecognitionHogDlib
@@ -27,7 +27,7 @@ class AppState:
         self.queue_list = []
         self.current_algorithm = "HOG + Dlib"
         self.tts_enabled = True
-        self.display_duration = 5
+        self.display_duration = 8
         self.last_face_id = None
         self.last_face_box = None
         self.last_face_detected = False
@@ -246,7 +246,9 @@ def generate_frames():
                     state.verified_student = student
                     db.mark_attended(expected_id)
                     if state.tts_enabled:
-                        threading.Thread(target=tts.speak, args=(student['name'],), daemon=True).start()
+                        grad_level = graduation_level(student.get('cgpa', 0) or 0)
+                        announcement = f"Congratulations {student['name']}, graduated with {grad_level}"
+                        threading.Thread(target=tts.speak, args=(announcement,), daemon=True).start()
             
             elif state.verification_state == 'displaying':
                 remaining = state.display_duration - (now - state.display_start_time)
@@ -254,6 +256,12 @@ def generate_frames():
                     state.current_queue_index += 1
                     state.verification_state = 'waiting'
                     state.verified_student = None
+                    state.last_face_id = None
+                    state.last_face_box = None
+                    state.last_face_detected = False
+                    state.last_qr_id = None
+                    state.last_qr_rect = None
+                    state.last_qr_detected = False
             
             # Draw detections
             disp = draw_detections(frame, state.last_face_id, state.last_face_box, 
@@ -340,11 +348,13 @@ def get_status():
             remaining = max(0, state.display_duration - (time.time() - state.display_start_time))
         
         verified_img = None
+        grad_level = None
         if state.verified_student:
             img_path = find_student_image(state.verified_student['student_id'])
             if img_path:
                 verified_img = '/' + img_path.replace('\\', '/')
-        
+            grad_level = graduation_level(state.verified_student.get('cgpa', 0) or 0)
+
         return jsonify({
             'queue_started': state.queue_started,
             'current_index': state.current_queue_index,
@@ -354,6 +364,7 @@ def get_status():
             'current_student': current_student,
             'verified_student': state.verified_student,
             'verified_img': verified_img,
+            'graduation_level': grad_level,
             'face_detected': state.last_face_detected,
             'face_id': state.last_face_id,
             'qr_detected': state.last_qr_detected,
@@ -370,8 +381,6 @@ def update_settings():
             state.current_algorithm = data['algorithm']
         if 'tts_enabled' in data:
             state.tts_enabled = data['tts_enabled']
-        if 'display_duration' in data:
-            state.display_duration = data['display_duration']
     return jsonify({'success': True})
 
 @app.route('/api/queue', methods=['GET'])

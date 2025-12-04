@@ -157,7 +157,8 @@ async function updateStatus() {
             if (data.verified_img) {
                 html += `<img src="${data.verified_img}" alt="Student">`;
             }
-            html += `<h3>✅ ${data.verified_student.name}</h3>`;
+            html += `<h3>🎓 ${data.verified_student.name}</h3>`;
+            html += `<div class="graduation-level">${data.graduation_level || ''}</div>`;
             html += `<div class="student-details">`;
             html += `<p><strong>ID:</strong> ${data.verified_student.student_id}</p>`;
             html += `<p><strong>Faculty:</strong> ${data.verified_student.faculty || 'N/A'}</p>`;
@@ -186,15 +187,12 @@ async function updateStatus() {
 
 async function updateSettings() {
     const algo = document.getElementById('algorithm-select').value;
-    const duration = document.getElementById('duration-slider').value;
     const tts = document.getElementById('tts-checkbox').checked;
-    
-    document.getElementById('duration-value').textContent = duration;
     
     await fetch('/api/settings', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({algorithm: algo, display_duration: parseInt(duration), tts_enabled: tts})
+        body: JSON.stringify({algorithm: algo, tts_enabled: tts})
     });
 }
 
