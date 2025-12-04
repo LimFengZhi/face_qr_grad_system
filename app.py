@@ -10,6 +10,7 @@ import threading
 from img_processing_class.utility_class.adaptive_preprocessor import AdaptivePreprocessor
 from img_processing_class.utility_class.qr_code_scanner import QRCodeScanner
 from img_processing_class.utility_class.box_helper import draw_detections
+from img_processing_class.utility_class.text_to_speach import TextToSpeech
 
 # Page config
 st.set_page_config(
@@ -42,6 +43,11 @@ if 'camera_initialized' not in st.session_state:
 executor = ThreadPoolExecutor(max_workers=4)
 
 # ==================== CAMERA MANAGEMENT (SINGLETON) ====================
+@st.cache_resource
+def get_tts():
+    """Get Text-to-Speech instance"""
+    return TextToSpeech()
+
 @st.cache_resource
 def get_camera():
     """Initialize camera ONCE and cache it globally"""
@@ -331,6 +337,12 @@ if not st.session_state.models_loaded:
         
         preprocessor = preprocessor_future.result()
         qr_scanner = qr_future.result()
+
+        progress_bar.progress(80)
+        status_text.text("Initializing Text-to-Speech...")
+        
+        # Initialize TTS
+        tts = get_tts()
         
         progress_bar.progress(90)
         status_text.text("Initializing camera...")
@@ -350,8 +362,9 @@ else:
     qr_scanner = load_qr_scanner()
     all_models = load_all_models_parallel()
 
-# Get cached camera (won't reinitialize)
+# Get cached camera 
 cap = get_camera()
+tts = get_tts()
 
 # Get list of available models
 available_algorithms = [name for name, model in all_models.items() if model is not None]
@@ -373,6 +386,12 @@ student_lookup = build_student_lookup(student_df)
 st.sidebar.markdown("---")
 st.sidebar.subheader("⚡ Performance")
 process_every_n = st.sidebar.slider("Process every N frames", 1, 10, 2)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔊 Voice Settings")
+tts_enabled = st.sidebar.checkbox("Enable Voice Announcement", value=True)
+tts_cooldown = st.sidebar.slider("Announcement Cooldown (sec)", 3, 15, 5)
+tts.set_cooldown(tts_cooldown)
 
 # Get selected model
 face_model = all_models.get(algorithm)
@@ -418,6 +437,7 @@ if cap is not None and cap.isOpened():
     
     image_future = None
     last_verified_id = None
+    last_verified_time = 0  # Track when last verified
     
     while True:
         try:
@@ -453,14 +473,37 @@ if cap is not None and cap.isOpened():
             
             verified = False
             student_info = None
+            current_time = time.time()
+            
             if last_face_id and last_qr_id and str(last_face_id) == str(last_qr_id):
                 verified = True
                 student_info = get_student_info_fast(last_face_id, student_lookup)
                 
+                # Check if this is a new verification OR cooldown has passed
+                should_announce = False
                 if last_face_id != last_verified_id:
+                    # New person
+                    should_announce = True
+                elif (current_time - last_verified_time) >= tts_cooldown:
+                    # Same person but cooldown passed
+                    should_announce = True
+                
+                if should_announce:
                     image_future = load_student_image_async(last_face_id)
                     last_verified_id = last_face_id
-            
+                    last_verified_time = current_time
+
+                    # Announce student name via TTS
+                    if tts_enabled and student_info:
+                        student_name = student_info.get('name', student_info.get('Name', ''))
+                        if student_name:
+                            tts.speak(student_name)
+            else:
+                # Reset when person leaves or mismatch
+                if not last_face_detected or not last_qr_detected:
+                    last_verified_id = None
+                    last_verified_time = 0
+
             display_frame = draw_detections(frame, last_face_id, last_face_box, last_qr_id, last_qr_rect)
             cv.putText(display_frame, f"FPS: {current_fps:.1f}", (10, 30), 
                        cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
