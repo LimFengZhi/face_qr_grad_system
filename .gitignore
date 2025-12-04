@@ -14,8 +14,6 @@ venv/
 # VS Code
 .vscode/
 
-# Encodings (large binary files)
-encodings/*.pkl
 
 # Model files (too large)
 *.onnx
@@ -32,3 +30,5 @@ Thumbs.db
 
 # Logs
 *.log
+
+face_recog_dlib_file/

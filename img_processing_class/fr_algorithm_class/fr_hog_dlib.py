@@ -78,4 +78,11 @@ class FaceRecognitionHogDlib:
         self.known_list_encoding.append(encoding)
         self.known_list_ids.append(id)
         self.save_encoding()
+
+    def clear_encodings(self):
+        self.known_list_encoding = []
+        self.known_list_ids = []
+        if os.path.exists(self.file_path):
+            os.remove(self.file_path)
+        
         

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎓 Graduation Ceremony System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>🎓 Graduation Ceremony System</h1>
+        
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showTab('scanner')">🎓 Scanner</button>
+            <button class="tab-btn" onclick="showTab('queue')">📋 Queue Management</button>
+        </div>
+        
+        <!-- Scanner Tab -->
+        <div id="scanner-tab" class="tab-content active">
+            <div class="grid">
+                <div>
+                    <div class="card">
+                        <h2>📹 <span id="algo-display">HOG + Dlib</span></h2>
+                        <div id="video-container">
+                            <div id="video-placeholder">📹 Click START QUEUE to begin</div>
+                            <img id="video-feed" style="display:none;" />
+                        </div>
+                        <div class="status-row">
+                            <div id="face-status" class="status-box info">Face: ⏸️</div>
+                            <div id="qr-status" class="status-box info">QR: ⏸️</div>
+                        </div>
+                        <div id="match-status" class="status-box info" style="margin-top:10px; font-size:20px;">⏸️ Ready</div>
+                    </div>
+                </div>
+                
+                                <div>
+                    <div class="card">
+                        <h2>👤 Verified Student</h2>
+                        <div id="verified-card" class="student-card">
+                            <p style="color:#666;">Waiting for verification...</p>
+                        </div>
+                    </div>
+                    
+                    <div class="card" style="margin-top:20px;">
+                        <h2>🎮 Controls</h2>
+                        <div class="controls">
+                            <button id="start-btn" class="btn btn-primary" onclick="startQueue()">▶️ START</button>
+                            <button id="stop-btn" class="btn btn-danger" onclick="stopQueue()" style="display:none;">⏹️ STOP</button>
+                            <button id="skip-btn" class="btn btn-secondary" onclick="skipCurrent()" style="display:none;">⏭️ SKIP</button>
+                        </div>
+                        <div id="waiting-info" class="waiting-info" style="display:none;">
+                            <h4>Waiting for:</h4>
+                            <div id="waiting-name">-</div>
+                            <div id="waiting-pos">Position: -/-</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card" style="margin-top:20px;">
+                        <h2>⚙️ Settings</h2>
+                        <div class="settings-row">
+                            <label>Algorithm:</label>
+                            <select id="algorithm-select" onchange="updateSettings()">
+                                {% for algo in algorithms %}
+                                <option value="{{ algo }}">{{ algo }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label>Voice:</label>
+                            <input type="checkbox" id="tts-checkbox" checked onchange="updateSettings()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Queue Management Tab -->
+        <div id="queue-tab" class="tab-content">
+            <div class="grid">
+                <div>
+                    <div class="card">
+                        <h2>📋 Queue</h2>
+                        <div id="queue-list" class="queue-list">
+                            <p style="color:#666; text-align:center;">Queue empty</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <div class="card">
+                        <h2>➕ Add Students</h2>
+                        <div class="add-section">
+                            <select id="student-select">
+                                <option value="">Select student...</option>
+                            </select>
+                            <button class="btn btn-primary" onclick="addStudent()" style="width:100%;">➕ Add to Queue</button>
+                        </div>
+                        <div class="controls" style="flex-direction:column;">
+                            <button class="btn btn-secondary" onclick="addAllStudents()" style="width:100%;">📥 Add All</button>
+                            <button class="btn btn-danger" onclick="clearQueue()" style="width:100%;">🔄 Clear Queue</button>
+                            <button class="btn btn-secondary" onclick="resetAttendance()" style="width:100%;">🔄 Reset Attendance</button>
+                        </div>
+                    </div>
+                    
+                    <div class="card" style="margin-top:20px;">
+                        <h2>📊 Statistics</h2>
+                        <div class="stats">
+                            <div class="stat-item">
+                                <div id="stat-attended" class="value">0</div>
+                                <div class="label">Attended</div>
+                            </div>
+                            <div class="stat-item">
+                                <div id="stat-total" class="value">0</div>
+                                <div class="label">Total</div>
+                            </div>
+                            <div class="stat-item">
+                                <div id="stat-rate" class="value">0%</div>
+                                <div class="label">Rate</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card" style="margin-top:20px;">
+                        <h2>📧 Email Settings</h2>
+                        <div class="settings-row">
+                            <label>Send QR on Add:</label>
+                            <input type="checkbox" id="email-checkbox" onchange="toggleEmail()">
+                        </div>
+                        <p style="color:#888; font-size:12px; margin-top:10px;">
+                            When enabled, QR codes will be emailed to students when added to queue.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
