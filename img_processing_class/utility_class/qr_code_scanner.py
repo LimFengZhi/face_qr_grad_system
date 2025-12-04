@@ -92,11 +92,179 @@ class QRCodeScanner:
         )
         return binary
     
+    def enhance_image(self, image, scale=2.0):
+        """Enhance and upscale image for better QR detection"""
+        # Upscale
+        h, w = image.shape[:2]
+        new_w, new_h = int(w * scale), int(h * scale)
+        upscaled = cv.resize(image, (new_w, new_h), interpolation=cv.INTER_CUBIC)
+        
+        # Sharpen
+        kernel = np.array([[-1, -1, -1],
+                          [-1,  9, -1],
+                          [-1, -1, -1]])
+        sharpened = cv.filter2D(upscaled, -1, kernel)
+        
+        return sharpened
+    
+    def find_qr_region(self, image):
+        """
+        Find potential QR code regions using contour detection
+        
+        Returns:
+            List of (x, y, w, h) bounding boxes for potential QR regions
+        """
+        gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+        
+        # Edge detection
+        edges = cv.Canny(gray, 50, 150)
+        
+        # Dilate to connect edges
+        kernel = np.ones((3, 3), np.uint8)
+        dilated = cv.dilate(edges, kernel, iterations=2)
+        
+        # Find contours
+        contours, _ = cv.findContours(dilated, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+        
+        regions = []
+        h, w = image.shape[:2]
+        min_size = min(w, h) * 0.05  # Minimum 5% of image
+        max_size = min(w, h) * 0.8   # Maximum 80% of image
+        
+        for contour in contours:
+            x, y, cw, ch = cv.boundingRect(contour)
+            
+            # Filter by size and aspect ratio (QR codes are roughly square)
+            if min_size < cw < max_size and min_size < ch < max_size:
+                aspect_ratio = cw / ch if ch > 0 else 0
+                if 0.5 < aspect_ratio < 2.0:  # Roughly square
+                    # Add padding around the region
+                    padding = int(max(cw, ch) * 0.2)
+                    x = max(0, x - padding)
+                    y = max(0, y - padding)
+                    cw = min(w - x, cw + 2 * padding)
+                    ch = min(h - y, ch + 2 * padding)
+                    regions.append((x, y, cw, ch))
+        
+        # Sort by area (largest first)
+        regions.sort(key=lambda r: r[2] * r[3], reverse=True)
+        
+        return regions[:5]  # Return top 5 candidates
+    
+    def scan_with_zoom(self, image, zoom_scales=[1.0, 1.5, 2.0, 3.0]):
+        """
+        Scan QR with multiple zoom levels
+        
+        Args:
+            image: BGR image
+            zoom_scales: List of scale factors to try
+        
+        Returns:
+            List of decoded QR data dicts
+        """
+        results = []
+        
+        for scale in zoom_scales:
+            if scale == 1.0:
+                scan_img = image
+            else:
+                scan_img = self.enhance_image(image, scale)
+            
+            # Try pyzbar
+            decoded = pyzbar.decode(scan_img)
+            if decoded:
+                for obj in decoded:
+                    # Adjust rect coordinates back to original scale
+                    rect = obj.rect
+                    if scale != 1.0:
+                        adjusted_rect = pyzbar.Rect(
+                            int(rect.left / scale),
+                            int(rect.top / scale),
+                            int(rect.width / scale),
+                            int(rect.height / scale)
+                        )
+                    else:
+                        adjusted_rect = rect
+                    
+                    results.append({
+                        'data': obj.data.decode('utf-8'),
+                        'type': obj.type,
+                        'rect': adjusted_rect
+                    })
+                return results  # Found at this scale, return
+            
+            # Try preprocessed
+            preprocessed = self.preprocess(scan_img)
+            decoded = pyzbar.decode(preprocessed)
+            if decoded:
+                for obj in decoded:
+                    rect = obj.rect
+                    if scale != 1.0:
+                        adjusted_rect = pyzbar.Rect(
+                            int(rect.left / scale),
+                            int(rect.top / scale),
+                            int(rect.width / scale),
+                            int(rect.height / scale)
+                        )
+                    else:
+                        adjusted_rect = rect
+                    
+                    results.append({
+                        'data': obj.data.decode('utf-8'),
+                        'type': obj.type,
+                        'rect': adjusted_rect
+                    })
+                return results
+        
+        return results
+    
+    def scan_regions(self, image):
+        """
+        Find QR regions, crop and zoom each one for scanning
+        
+        Args:
+            image: BGR image
+        
+        Returns:
+            List of decoded QR data dicts
+        """
+        # First try full image
+        results = self.scan_with_zoom(image, [1.0, 1.5, 2.0])
+        if results:
+            return results
+        
+        # Find potential QR regions
+        regions = self.find_qr_region(image)
+        
+        for (x, y, w, h) in regions:
+            # Crop the region
+            cropped = image[y:y+h, x:x+w]
+            
+            if cropped.size == 0:
+                continue
+            
+            # Try scanning the cropped region with zoom
+            decoded = self.scan_with_zoom(cropped, [2.0, 3.0, 4.0])
+            
+            if decoded:
+                # Adjust coordinates back to original image
+                for item in decoded:
+                    rect = item['rect']
+                    item['rect'] = pyzbar.Rect(
+                        x + rect.left,
+                        y + rect.top,
+                        rect.width,
+                        rect.height
+                    )
+                return decoded
+        
+        return []
+    
     # ==================== SCANNING ====================
     
     def scan(self, image):
         """
-        Scan QR code from image
+        Scan QR code from image with auto-zoom for small QR codes
         
         Args:
             image: BGR image (numpy array)
@@ -104,31 +272,33 @@ class QRCodeScanner:
         Returns:
             List of decoded QR data dicts
         """
-        results = []
-        
-        # Try pyzbar on original
+        # Quick scan first (fastest)
         decoded = pyzbar.decode(image)
-        for obj in decoded:
-            results.append({
-                'data': obj.data.decode('utf-8'),
-                'type': obj.type,
-                'rect': obj.rect
-            })
-        
-        if results:
+        if decoded:
+            results = []
+            for obj in decoded:
+                results.append({
+                    'data': obj.data.decode('utf-8'),
+                    'type': obj.type,
+                    'rect': obj.rect
+                })
             return results
         
-        # Try preprocessed image
+        # Try preprocessed
         preprocessed = self.preprocess(image)
         decoded = pyzbar.decode(preprocessed)
-        for obj in decoded:
-            results.append({
-                'data': obj.data.decode('utf-8'),
-                'type': obj.type,
-                'rect': obj.rect
-            })
+        if decoded:
+            results = []
+            for obj in decoded:
+                results.append({
+                    'data': obj.data.decode('utf-8'),
+                    'type': obj.type,
+                    'rect': obj.rect
+                })
+            return results
         
-        return results
+        # Try with zoom and region detection for small QR codes
+        return self.scan_regions(image)
     
     def scan_file(self, image_path):
         """
