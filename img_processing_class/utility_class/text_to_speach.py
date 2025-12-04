@@ -54,7 +54,7 @@ class TextToSpeech:
                     engine.setProperty('volume', 1.0)
                     
                     self._speaking = True
-                    engine.say(f"Congratulation, {name}")
+                    engine.say(f"{name}")
                     engine.runAndWait()
                 except Exception as e:
                     print(f"Speech error: {e}")

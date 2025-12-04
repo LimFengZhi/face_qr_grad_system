@@ -400,3 +400,20 @@ h1 {
 .queue-list::-webkit-scrollbar-thumb:hover {
     background: #5a6fd6;
 }
+
+/* ...existing code... (add these styles) */
+
+#sender-email, #sender-password {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #444;
+    border-radius: 5px;
+    background: #2a2a3e;
+    color: white;
+    box-sizing: border-box;
+}
+
+#sender-email::placeholder, #sender-password::placeholder {
+    color: #888;
+}

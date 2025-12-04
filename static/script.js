@@ -303,8 +303,30 @@ async function resetAttendance() {
         select.dispatchEvent(new Event('change'));
     }
 }
-// Initial load
+
+async function toggleEmail() {
+    const enabled = document.getElementById('email-checkbox').checked;
+    
+    await fetch('/api/email/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled: enabled})
+    });
+}
+
+async function loadEmailStatus() {
+    try {
+        const res = await fetch('/api/email/status');
+        const data = await res.json();
+        document.getElementById('email-checkbox').checked = data.enabled;
+    } catch (e) {
+        console.error('Error loading email status:', e);
+    }
+}
+
+// Update DOMContentLoaded to load email status
 document.addEventListener('DOMContentLoaded', function() {
     loadQueue();
     loadStats();
+    loadEmailStatus();
 });

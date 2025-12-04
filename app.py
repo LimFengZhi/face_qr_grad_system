@@ -14,6 +14,7 @@ from img_processing_class.utility_class.camera import Camera
 from img_processing_class.fr_algorithm_class.fr_insightface import FaceRecognitionInsightFace
 from img_processing_class.fr_algorithm_class.fr_hog_dlib import FaceRecognitionHogDlib
 from img_processing_class.fr_algorithm_class.fr_deepface import FaceRecognitionDeepFace
+from img_processing_class.utility_class.email_sender import get_email_sender
 
 app = Flask(__name__)
 
@@ -35,6 +36,7 @@ class AppState:
         self.last_qr_rect = None
         self.last_qr_detected = False
         self.verified_student = None
+        self.email_enabled = False 
         self.lock = threading.Lock()
 
 state = AppState()
@@ -401,6 +403,9 @@ def add_to_queue():
     if student:
         with state.lock:
             state.queue_list.append(student)
+            if state.email_enabled:
+                email_sender = get_email_sender()
+                email_sender.send_qr_email_async(student)
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Student not found'})
 
@@ -410,7 +415,13 @@ def add_all_to_queue():
     with state.lock:
         all_students = db.get_all_students()
         # Only add students who haven't attended
-        state.queue_list = [s for s in all_students if not s.get('attended', False)]
+        new_queue = [s for s in all_students if not s.get('attended', False)]
+        state.queue_list = new_queue
+
+        if state.email_enabled:
+            email_sender = get_email_sender()
+            for student in new_queue:
+                email_sender.send_qr_email_async(student)
     return jsonify({'success': True})
 
 @app.route('/api/queue/clear', methods=['POST'])
@@ -468,6 +479,25 @@ def reset_attendance():
 def serve_image(filename):
     from flask import send_from_directory
     return send_from_directory('data/Image', filename)
+
+
+@app.route('/api/email/toggle', methods=['POST'])
+def toggle_email():
+    """Enable/disable email sending"""
+    global state
+    data = request.json
+    with state.lock:
+        state.email_enabled = data.get('enabled', False)
+    return jsonify({'success': True, 'email_enabled': state.email_enabled})
+
+@app.route('/api/email/status')
+def email_status():
+    """Get email configuration status"""
+    global state
+    return jsonify({
+        'enabled': state.email_enabled
+    })
+
 
 if __name__ == '__main__':
     app.run(debug=False, threaded=True, host='0.0.0.0', port=5000)
