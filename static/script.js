@@ -69,21 +69,36 @@ async function updateStatus() {
         // Update face status
         const faceStatus = document.getElementById('face-status');
         if (data.face_detected) {
-            faceStatus.className = 'status-box success';
-            faceStatus.textContent = 'Face: ✅ ' + (data.face_id || 'Unknown');
+            const expectedId = data.current_student ? data.current_student.student_id : null;
+            if (expectedId && String(data.face_id) === String(expectedId)) {
+                faceStatus.className = 'status-box success';
+                faceStatus.textContent = '✅ Face: ' + data.face_id;
+            } else if (data.face_id) {
+                faceStatus.className = 'status-box warning';
+                faceStatus.textContent = '⚠️ Face: ' + data.face_id + ' (Expected: ' + expectedId + ')';
+            } else {
+                faceStatus.className = 'status-box info';
+                faceStatus.textContent = '👤 Face: Unknown';
+            }
         } else {
             faceStatus.className = 'status-box error';
-            faceStatus.textContent = 'Face: ❌';
+            faceStatus.textContent = '❌ No Face';
         }
         
         // Update QR status
         const qrStatus = document.getElementById('qr-status');
         if (data.qr_detected) {
-            qrStatus.className = 'status-box success';
-            qrStatus.textContent = 'QR: ✅ ' + data.qr_id;
+            const expectedId = data.current_student ? data.current_student.student_id : null;
+            if (expectedId && String(data.qr_id) === String(expectedId)) {
+                qrStatus.className = 'status-box success';
+                qrStatus.textContent = '✅ QR: ' + data.qr_id;
+            } else {
+                qrStatus.className = 'status-box warning';
+                qrStatus.textContent = '⚠️ QR: ' + data.qr_id + ' (Expected: ' + expectedId + ')';
+            }
         } else {
             qrStatus.className = 'status-box error';
-            qrStatus.textContent = 'QR: ❌';
+            qrStatus.textContent = '❌ No QR';
         }
         
         // Update match status
@@ -91,17 +106,43 @@ async function updateStatus() {
         if (data.verification_state === 'displaying') {
             matchStatus.className = 'status-box success';
             matchStatus.textContent = '✅ VERIFIED';
-        } else if (data.face_id && data.qr_id && data.current_student && 
-                   data.face_id == data.qr_id && data.face_id == data.current_student.student_id) {
-            matchStatus.className = 'status-box success';
-            matchStatus.textContent = '✅ Match!';
-        } else if (data.face_id && data.qr_id) {
-            matchStatus.className = 'status-box warning';
-            matchStatus.textContent = '⚠️ Wrong student';
+        } else if (data.face_id && data.qr_id && data.current_student) {
+            const expectedId = data.current_student.student_id;
+            const faceMatch = String(data.face_id) === String(expectedId);
+            const qrMatch = String(data.qr_id) === String(expectedId);
+            const faceQrMatch = String(data.face_id) === String(data.qr_id);
+            
+            if (faceMatch && qrMatch) {
+                matchStatus.className = 'status-box success';
+                matchStatus.textContent = '✅ Match!';
+            } else if (!faceMatch && !qrMatch) {
+                // Both wrong
+                matchStatus.className = 'status-box error';
+                matchStatus.textContent = '❌ Wrong Face & QR';
+            } else if (!faceMatch) {
+                // Face wrong, QR correct
+                matchStatus.className = 'status-box warning';
+                matchStatus.textContent = '⚠️ Wrong Face (QR OK)';
+            } else if (!qrMatch) {
+                // Face correct, QR wrong
+                matchStatus.className = 'status-box warning';
+                matchStatus.textContent = '⚠️ Wrong QR (Face OK)';
+            } else if (!faceQrMatch) {
+                // Face and QR don't match each other
+                matchStatus.className = 'status-box error';
+                matchStatus.textContent = '❌ Face ≠ QR Mismatch';
+            }
+        } else if (data.face_id && !data.qr_id) {
+            matchStatus.className = 'status-box info';
+            matchStatus.textContent = '👤 Face detected, waiting QR...';
+        } else if (!data.face_id && data.qr_id) {
+            matchStatus.className = 'status-box info';
+            matchStatus.textContent = '📱 QR detected, waiting Face...';
         } else {
             matchStatus.className = 'status-box info';
             matchStatus.textContent = '⏳ Scanning...';
         }
+
         
         // Update waiting info
         if (data.current_student) {
