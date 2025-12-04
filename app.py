@@ -1,207 +1,116 @@
-import streamlit as st
+from flask import Flask, render_template, Response, jsonify, request
 import cv2 as cv
-import numpy as np
-import pandas as pd
-import os
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import time
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 from img_processing_class.utility_class.adaptive_preprocessor import AdaptivePreprocessor
 from img_processing_class.utility_class.qr_code_scanner import QRCodeScanner
 from img_processing_class.utility_class.box_helper import draw_detections
 from img_processing_class.utility_class.text_to_speach import TextToSpeech
+from img_processing_class.utility_class.student_database import StudentDatabase, init_database
 
-# Page config
-st.set_page_config(
-    page_title="Face + QR Verification",
-    page_icon="🔐",
-    layout="wide"
-)
+app = Flask(__name__)
 
-# ==================== SESSION STATE ====================
-if 'face_id' not in st.session_state:
-    st.session_state.face_id = None
-if 'qr_id' not in st.session_state:
-    st.session_state.qr_id = None
-if 'verified' not in st.session_state:
-    st.session_state.verified = False
-if 'student_info' not in st.session_state:
-    st.session_state.student_info = None
-if 'face_detected' not in st.session_state:
-    st.session_state.face_detected = False
-if 'qr_detected' not in st.session_state:
-    st.session_state.qr_detected = False
-if 'models_loaded' not in st.session_state:
-    st.session_state.models_loaded = False
-if 'current_algorithm' not in st.session_state:
-    st.session_state.current_algorithm = None
-if 'camera_initialized' not in st.session_state:
-    st.session_state.camera_initialized = False
+# ==================== GLOBAL STATE ====================
+class AppState:
+    def __init__(self):
+        self.queue_started = False
+        self.current_queue_index = 0
+        self.verification_state = 'waiting'  # 'waiting' or 'displaying'
+        self.display_start_time = 0
+        self.queue_list = []
+        self.current_algorithm = "HOG + Dlib"
+        self.tts_enabled = True
+        self.display_duration = 5
+        self.last_face_id = None
+        self.last_face_box = None
+        self.last_face_detected = False
+        self.last_qr_id = None
+        self.last_qr_rect = None
+        self.last_qr_detected = False
+        self.verified_student = None
+        self.lock = threading.Lock()
 
-# ==================== THREAD POOL FOR PARALLEL PROCESSING ====================
+state = AppState()
+
+# ==================== LOAD MODELS ====================
+print("🚀 Loading models...")
 executor = ThreadPoolExecutor(max_workers=4)
 
-# ==================== CAMERA MANAGEMENT (SINGLETON) ====================
-@st.cache_resource
-def get_tts():
-    """Get Text-to-Speech instance"""
-    return TextToSpeech()
-
-@st.cache_resource
-def get_camera():
-    """Initialize camera ONCE and cache it globally"""
-    print("🎥 Initializing camera...")
-    cap = None
-    
-    try:
-        cap = cv.VideoCapture(0, cv.CAP_DSHOW)
-        if cap.isOpened():
-            cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
-            cap.set(cv.CAP_PROP_FPS, 30)
-            cap.set(cv.CAP_PROP_BUFFERSIZE, 1)
-            print("✓ Camera opened with CAP_DSHOW")
-            return cap
-    except Exception as e:
-        print(f"CAP_DSHOW failed: {e}")
-        if cap:
-            cap.release()
-    
-    try:
-        cap = cv.VideoCapture(0)
-        if cap.isOpened():
-            cap.set(cv.CAP_PROP_BUFFERSIZE, 1)
-            print("✓ Camera opened with default backend")
-            return cap
-    except Exception as e:
-        print(f"Default backend failed: {e}")
-        if cap:
-            cap.release()
-    
-    return None
-
-# ==================== 1. PARALLEL MODEL LOADING ====================
 def load_hog_dlib():
-    """Load HOG + Dlib model"""
     try:
         from img_processing_class.fr_algorithm_class.fr_hog_dlib import FaceRecognitionHogDlib
-        model = FaceRecognitionHogDlib(
-            file_path="encodings/hb_encoding.pkl",
-            confidence=0.6
-        )
-        print("✓ HOG + Dlib loaded")
+        model = FaceRecognitionHogDlib(file_path="encodings/hb_encoding.pkl", confidence=0.6)
         return ("HOG + Dlib", model)
     except Exception as e:
-        print(f"✗ HOG + Dlib failed: {e}")
+        print(f"HOG + Dlib failed: {e}")
         return ("HOG + Dlib", None)
 
 def load_deepface():
-    """Load DeepFace model"""
     try:
         from img_processing_class.fr_algorithm_class.fr_deepface import FaceRecognitionDeepFace
         model = FaceRecognitionDeepFace(
             file_path="encodings/deepface_facenet512.pkl",
-            threshold=0.68,
-            model_name='Facenet512',
-            detector_backend='retinaface'
+            threshold=0.68, model_name='Facenet512', detector_backend='retinaface'
         )
-        print("✓ DeepFace loaded")
         return ("DeepFace", model)
     except Exception as e:
-        print(f"✗ DeepFace failed: {e}")
+        print(f"DeepFace failed: {e}")
         return ("DeepFace", None)
 
 def load_insightface():
-    """Load InsightFace model"""
     try:
         from img_processing_class.fr_algorithm_class.fr_insightface import FaceRecognitionInsightFace
         model = FaceRecognitionInsightFace(
             file_path="encodings/insightface_buffalo.pkl",
-            threshold=0.3,
-            model_name='buffalo_s',
-            ctx_id=-1
+            threshold=0.3, model_name='buffalo_s', ctx_id=-1
         )
-        print("✓ InsightFace loaded")
         return ("InsightFace", model)
     except Exception as e:
-        print(f"✗ InsightFace failed: {e}")
+        print(f"InsightFace failed: {e}")
         return ("InsightFace", None)
 
 def load_mtcnn_facenet():
-    """Load MTCNN + FaceNet model"""
     try:
         from img_processing_class.fr_algorithm_class.fr_mtcnn_facenet import FaceRecognitionMTCNNFaceNet
-        model = FaceRecognitionMTCNNFaceNet(
-            file_path="encodings/mtcnn_facenet.pkl",
-            threshold=0.4
-        )
-        print("✓ MTCNN + FaceNet loaded")
+        model = FaceRecognitionMTCNNFaceNet(file_path="encodings/mtcnn_facenet.pkl", threshold=0.4)
         return ("MTCNN + FaceNet", model)
     except Exception as e:
-        print(f"✗ MTCNN + FaceNet failed: {e}")
+        print(f"MTCNN + FaceNet failed: {e}")
         return ("MTCNN + FaceNet", None)
 
-@st.cache_resource
-def load_all_models_parallel():
-    """Load all face recognition models - MTCNN loaded separately due to TensorFlow threading issues"""
-    models = {}
-    
-    futures = [
-        executor.submit(load_hog_dlib),
-        executor.submit(load_deepface),
-        executor.submit(load_insightface),
-    ]
-    
-    for future in as_completed(futures):
-        name, model = future.result()
-        models[name] = model
-    
-    # Load MTCNN + FaceNet SEQUENTIALLY
-    name, model = load_mtcnn_facenet()
-    models[name] = model
-    
-    return models
+# Load models in parallel (except MTCNN)
+all_models = {}
+futures = [
+    executor.submit(load_hog_dlib),
+    executor.submit(load_deepface),
+    executor.submit(load_insightface),
+]
+for future in futures:
+    name, model = future.result()
+    all_models[name] = model
+    if model:
+        print(f"✓ {name} loaded")
 
-@st.cache_resource
-def load_preprocessor():
-    return AdaptivePreprocessor()
+name, model = load_mtcnn_facenet()
+all_models[name] = model
+if model:
+    print(f"✓ {name} loaded")
 
-@st.cache_resource
-def load_qr_scanner():
-    return QRCodeScanner()
+preprocessor = AdaptivePreprocessor()
+qr_scanner = QRCodeScanner()
+tts = TextToSpeech()
+db = init_database("student_list.csv", "students.db")
 
-@st.cache_data
-def load_student_data(path):
-    if os.path.exists(path):
-        return pd.read_csv(path)
-    return None
+available_algorithms = [name for name, model in all_models.items() if model is not None]
+print(f"✅ Ready! Available: {available_algorithms}")
 
-@st.cache_data
-def build_student_lookup(_df):
-    """Build a dictionary for O(1) student lookup"""
-    if _df is None:
-        return {}
-    
-    lookup = {}
-    id_columns = ['student_id', 'id', 'ID', 'StudentID']
-    
-    for col in id_columns:
-        if col in _df.columns:
-            for idx, row in _df.iterrows():
-                lookup[str(row[col])] = row.to_dict()
-            break
-    
-    return lookup
-
-def get_student_info_fast(student_id, lookup):
-    return lookup.get(str(student_id))
-
-def detect_face_pipeline(frame, model, preprocessor, algo_name):
-    """Detect and recognize face"""
+# ==================== DETECTION FUNCTIONS ====================
+def detect_face_pipeline(frame, model, algo_name):
     if model is None:
         return None, None, False
-    
     try:
         processed = preprocessor.process(frame)
         
@@ -209,77 +118,66 @@ def detect_face_pipeline(frame, model, preprocessor, algo_name):
             face_region = model.detect_face(processed)
             if face_region is None:
                 return None, None, False
-            
             bbox = face_region.bbox.astype(int)
             box = (bbox[0], bbox[1], bbox[2], bbox[3])
-            
             encoding, success = model.recognise_face(processed, face_region)
             if not success:
                 return None, box, True
-            
             matched_id, distance, matched = model.compare_encoding(encoding)
             return matched_id if matched else None, box, True
         
         elif algo_name == "MTCNN + FaceNet":
             rgb_frame = cv.cvtColor(processed, cv.COLOR_BGR2RGB)
             face_region = model.detect_face(rgb_frame)
-            
             if face_region is None:
                 return None, None, False
-            
             x, y, w, h = face_region['box']
             x, y = abs(x), abs(y)
             box = (x, y, x + w, y + h)
-            
             encoding, success = model.recognise_face(rgb_frame, face_region)
             if not success:
                 return None, box, True
-            
             matched_id, distance, matched = model.compare_encoding(encoding)
             return matched_id if matched else None, box, True
         
-        else:
+        elif algo_name == "DeepFace":
+            rgb_frame = cv.cvtColor(processed, cv.COLOR_BGR2RGB)
+            face_region = model.detect_face(rgb_frame)
+            if face_region is None:
+                return None, None, False
+            # DeepFace returns dict with 'facial_area': {'x', 'y', 'w', 'h'}
+            fa = face_region['facial_area']
+            x, y, w, h = fa['x'], fa['y'], fa['w'], fa['h']
+            box = (x, y, x + w, y + h)
+            encoding, success = model.recognise_face(rgb_frame, face_region)
+            if not success:
+                return None, box, True
+            matched_id, distance, matched = model.compare_encoding(encoding)
+            return matched_id if matched else None, box, True
+        
+        else:  # HOG + Dlib
             rgb_frame = cv.cvtColor(processed, cv.COLOR_BGR2RGB)
             face_loc = model.detect_face(rgb_frame)
-            
             if face_loc is None or len(face_loc) == 0:
                 return None, None, False
-            
             if isinstance(face_loc, list) and len(face_loc) > 0:
                 face_loc = max(face_loc, key=lambda f: (f[2] - f[0]) * (f[1] - f[3]))
-            
-            if algo_name == "HOG + Dlib":
-                top, right, bottom, left = face_loc
-                box = (left, top, right, bottom)
-            else:
-                if hasattr(face_loc, 'get'):
-                    fa = face_loc.get('facial_area', face_loc.get('box', {}))
-                    if 'x' in fa:
-                        box = (fa['x'], fa['y'], fa['x'] + fa['w'], fa['y'] + fa['h'])
-                    else:
-                        top, right, bottom, left = face_loc
-                        box = (left, top, right, bottom)
-                else:
-                    top, right, bottom, left = face_loc
-                    box = (left, top, right, bottom)
-            
+            top, right, bottom, left = face_loc
+            box = (left, top, right, bottom)
             encoding, success = model.recognise_face(
                 rgb_frame, [face_loc] if isinstance(face_loc, tuple) else face_loc
             )
             if not success:
                 return None, box, True
-            
             matched_id, distance, matched = model.compare_encoding(encoding)
             return matched_id if matched else None, box, True
-            
     except Exception as e:
         print(f"Detection error ({algo_name}): {e}")
         return None, None, False
 
-def detect_qr_pipeline(frame, scanner):
-    """Detect QR code"""
+def detect_qr_pipeline(frame):
     try:
-        qr_results = scanner.scan(frame)
+        qr_results = qr_scanner.scan(frame)
         if qr_results:
             qr_id = qr_results[0]['data']
             rect = qr_results[0]['rect']
@@ -289,284 +187,317 @@ def detect_qr_pipeline(frame, scanner):
         pass
     return None, None, False
 
-def detect_parallel(frame, face_model, preprocessor, algo_name, qr_scanner):
-    """Run face and QR detection in parallel"""
-    face_future = executor.submit(detect_face_pipeline, frame.copy(), face_model, preprocessor, algo_name)
-    qr_future = executor.submit(detect_qr_pipeline, frame.copy(), qr_scanner)
-    
-    face_result = face_future.result()
-    qr_result = qr_future.result()
-    
-    return face_result, qr_result
-
 def find_student_image(student_id):
-    """Find student image"""
-    image_paths = [
-        f"Image/{student_id}.jpg",
-        f"Image/{student_id}.png", 
-        f"Image/{student_id}.jpeg",
-        f"Image/{student_id}.JPG",
-        f"Image/{student_id}.PNG",
-    ]
-    for img_path in image_paths:
+    for ext in ['.jpg', '.png', '.jpeg', '.JPG', '.PNG']:
+        img_path = f"Image/{student_id}{ext}"
         if os.path.exists(img_path):
             return img_path
     return None
 
-def load_student_image_async(student_id):
-    """Load student image asynchronously"""
-    future = executor.submit(find_student_image, student_id)
-    return future
-
-# ==================== LOAD ALL RESOURCES AT STARTUP ====================
-if not st.session_state.models_loaded:
-    with st.spinner("🚀 Loading all models in parallel..."):
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+# ==================== VIDEO STREAMING ====================
+class Camera:
+    def __init__(self):
+        self.cap = None
+        self.lock = threading.Lock()
+        self.running = False
         
-        status_text.text("Starting parallel loading...")
-        progress_bar.progress(10)
-        
-        preprocessor_future = executor.submit(load_preprocessor.__wrapped__)
-        qr_future = executor.submit(load_qr_scanner.__wrapped__)
-        
-        status_text.text("Loading all face recognition models in parallel...")
-        progress_bar.progress(30)
-        
-        all_models = load_all_models_parallel()
-        
-        preprocessor = preprocessor_future.result()
-        qr_scanner = qr_future.result()
-
-        progress_bar.progress(80)
-        status_text.text("Initializing Text-to-Speech...")
-        
-        # Initialize TTS
-        tts = get_tts()
-        
-        progress_bar.progress(90)
-        status_text.text("Initializing camera...")
-        
-        # Initialize camera during loading
-        cap = get_camera()
-        
-        progress_bar.progress(100)
-        status_text.text("✅ All models loaded!")
-        time.sleep(0.3)
-        progress_bar.empty()
-        status_text.empty()
-        
-        st.session_state.models_loaded = True
-else:
-    preprocessor = load_preprocessor()
-    qr_scanner = load_qr_scanner()
-    all_models = load_all_models_parallel()
-
-# Get cached camera 
-cap = get_camera()
-tts = get_tts()
-
-# Get list of available models
-available_algorithms = [name for name, model in all_models.items() if model is not None]
-
-# ==================== SIDEBAR ====================
-st.sidebar.header("🔄 Switch Algorithm")
-
-algorithm = st.sidebar.selectbox(
-    "Select Face Recognition",
-    available_algorithms,
-    index=0
-)
-st.session_state.current_algorithm = algorithm
-
-csv_path = st.sidebar.text_input("CSV File Path", value="student_list.csv")
-student_df = load_student_data(csv_path)
-student_lookup = build_student_lookup(student_df)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("⚡ Performance")
-process_every_n = st.sidebar.slider("Process every N frames", 1, 10, 2)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🔊 Voice Settings")
-tts_enabled = st.sidebar.checkbox("Enable Voice Announcement", value=True)
-tts_cooldown = st.sidebar.slider("Announcement Cooldown (sec)", 3, 15, 5)
-tts.set_cooldown(tts_cooldown)
-
-# Get selected model
-face_model = all_models.get(algorithm)
-
-# ==================== 2-COLUMN LAYOUT ====================
-col_left, col_right = st.columns([2, 1])
-
-with col_left:
-    st.subheader(f"📹 Face + QR Scanner ({algorithm})")
-    FRAME_WINDOW = st.empty()
+    def start(self):
+        with self.lock:
+            if self.cap is None or not self.cap.isOpened():
+                for idx in [0, 1]:
+                    try:
+                        self.cap = cv.VideoCapture(idx, cv.CAP_DSHOW)
+                        if self.cap.isOpened():
+                            ret, frame = self.cap.read()
+                            if ret:
+                                self.cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
+                                self.cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
+                                self.cap.set(cv.CAP_PROP_BUFFERSIZE, 1)
+                                print(f"✓ Camera {idx} opened")
+                                self.running = True
+                                return True
+                        self.cap.release()
+                    except:
+                        pass
+                return False
+            return True
     
-    st.markdown("---")
-    st.subheader("📊 Detection Status")
-    status_col1, status_col2 = st.columns(2)
-    face_status = status_col1.empty()
-    qr_status = status_col2.empty()
-    match_status = st.empty()
-
-with col_right:
-    st.subheader("👤 Student Info")
-    student_image_placeholder = st.empty()
-    student_info_placeholder = st.empty()
-
-# ==================== MAIN CAMERA LOOP ====================
-if cap is not None and cap.isOpened():
-    # Flush old frames
-    for _ in range(3):
-        cap.grab()
+    def stop(self):
+        with self.lock:
+            self.running = False
+            if self.cap:
+                self.cap.release()
+                self.cap = None
     
+    def read(self):
+        with self.lock:
+            if self.cap and self.cap.isOpened():
+                ret, frame = self.cap.read()
+                if ret:
+                    return frame
+        return None
+
+camera = Camera()
+
+def generate_frames():
+    global state
     frame_count = 0
-    last_face_id = None
-    last_face_box = None
-    last_face_detected = False
-    last_qr_id = None
-    last_qr_rect = None
-    last_qr_detected = False
-    error_count = 0
-    max_errors = 10
+    fps_time = time.time()
+    fps_count = 0
+    fps = 0
     
-    fps_start_time = time.time()
-    fps_frame_count = 0
-    current_fps = 0
-    
-    image_future = None
-    last_verified_id = None
-    last_verified_time = 0  # Track when last verified
-    
-    while True:
-        try:
-            ret, frame = cap.read()
-            
-            if not ret or frame is None:
-                error_count += 1
-                if error_count > max_errors:
-                    FRAME_WINDOW.error("❌ Camera disconnected. Please refresh the page.")
-                    # Clear cache to allow camera reinit on next run
-                    get_camera.clear()
-                    break
-                time.sleep(0.01)
-                continue
-            
-            error_count = 0
-            frame_count += 1
-            fps_frame_count += 1
-            
-            elapsed = time.time() - fps_start_time
-            if elapsed >= 1.0:
-                current_fps = fps_frame_count / elapsed
-                fps_frame_count = 0
-                fps_start_time = time.time()
-            
-            do_detection = (frame_count % process_every_n == 0)
-            
-            if do_detection:
-                last_face_id, last_face_box, last_face_detected = detect_face_pipeline(
-                        frame, face_model, preprocessor, algorithm
-                    )
-                last_qr_id, last_qr_rect, last_qr_detected = detect_qr_pipeline(frame, qr_scanner)
-            
-            verified = False
-            student_info = None
-            current_time = time.time()
-            
-            if last_face_id and last_qr_id and str(last_face_id) == str(last_qr_id):
-                verified = True
-                student_info = get_student_info_fast(last_face_id, student_lookup)
-                
-                # Check if this is a new verification OR cooldown has passed
-                should_announce = False
-                if last_face_id != last_verified_id:
-                    # New person
-                    should_announce = True
-                elif (current_time - last_verified_time) >= tts_cooldown:
-                    # Same person but cooldown passed
-                    should_announce = True
-                
-                if should_announce:
-                    image_future = load_student_image_async(last_face_id)
-                    last_verified_id = last_face_id
-                    last_verified_time = current_time
-
-                    # Announce student name via TTS
-                    if tts_enabled and student_info:
-                        student_name = student_info.get('name', student_info.get('Name', ''))
-                        if student_name:
-                            tts.speak(student_name)
-            else:
-                # Reset when person leaves or mismatch
-                if not last_face_detected or not last_qr_detected:
-                    last_verified_id = None
-                    last_verified_time = 0
-
-            display_frame = draw_detections(frame, last_face_id, last_face_box, last_qr_id, last_qr_rect)
-            cv.putText(display_frame, f"FPS: {current_fps:.1f}", (10, 30), 
-                       cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            display_frame = cv.cvtColor(display_frame, cv.COLOR_BGR2RGB)
-            
-            FRAME_WINDOW.image(display_frame, channels="RGB", use_container_width=True)
-            
-            if frame_count % 3 == 0:
-                if last_face_detected:
-                    if last_face_id:
-                        face_status.success(f"✅ Face: **{last_face_id}**")
-                    else:
-                        face_status.warning("⚠️ Face: **Unknown**")
-                else:
-                    face_status.error("❌ No Face")
-                
-                if last_qr_detected:
-                    qr_status.success(f"✅ QR: **{last_qr_id}**")
-                else:
-                    qr_status.error("❌ No QR")
-                
-                if verified:
-                    match_status.success("### ✅ VERIFIED")
-                elif last_face_id and last_qr_id:
-                    match_status.error("### ❌ MISMATCH")
-                else:
-                    match_status.info("### ⏳ Waiting...")
-                
-                if verified and last_face_id:
-                    if image_future and image_future.done():
-                        img_path = image_future.result()
-                        if img_path:
-                            student_image_placeholder.image(img_path, use_container_width=True)
-                        else:
-                            student_image_placeholder.info("📷 No image")
-                    
-                    if student_info:
-                        with student_info_placeholder.container():
-                            show_columns = ['student_id', 'name', 'course', 'cgpa']
-                            for k, v in student_info.items():
-                                if k in show_columns:
-                                    st.write(f"**{k}:** {v}")
-                else:
-                    student_image_placeholder.info("📷 Waiting...")
-                    student_info_placeholder.info("📋 Scan face + QR")
-                
-        except Exception as e:
-            error_count += 1
-            if error_count > max_errors:
-                FRAME_WINDOW.error(f"❌ Error: {str(e)}")
-                break
+    while state.queue_started:
+        frame = camera.read()
+        if frame is None:
+            time.sleep(0.03)
             continue
+        
+        frame_count += 1
+        fps_count += 1
+        
+        if time.time() - fps_time >= 1:
+            fps = fps_count
+            fps_count = 0
+            fps_time = time.time()
+        
+        now = time.time()
+        
+        with state.lock:
+            idx = state.current_queue_index
+            if idx >= len(state.queue_list):
+                state.queue_started = False
+                break
+            
+            student = state.queue_list[idx]
+            expected_id = student['student_id']
+            algo = state.current_algorithm
+            model = all_models.get(algo)
+            
+            if state.verification_state == 'waiting':
+                if frame_count % 2 == 0:
+                    state.last_face_id, state.last_face_box, state.last_face_detected = detect_face_pipeline(frame, model, algo)
+                    state.last_qr_id, state.last_qr_rect, state.last_qr_detected = detect_qr_pipeline(frame)
+                
+                if (state.last_face_id and state.last_qr_id and 
+                    str(state.last_face_id) == str(state.last_qr_id) == str(expected_id)):
+                    state.verification_state = 'displaying'
+                    state.display_start_time = now
+                    state.verified_student = student
+                    db.mark_attended(expected_id)
+                    if state.tts_enabled:
+                        threading.Thread(target=tts.speak, args=(student['name'],), daemon=True).start()
+            
+            elif state.verification_state == 'displaying':
+                remaining = state.display_duration - (now - state.display_start_time)
+                if remaining <= 0:
+                    state.current_queue_index += 1
+                    state.verification_state = 'waiting'
+                    state.verified_student = None
+            
+            # Draw detections
+            disp = draw_detections(frame, state.last_face_id, state.last_face_box, 
+                                   state.last_qr_id, state.last_qr_rect)
+            cv.putText(disp, f"FPS:{fps}", (10, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
+            cv.putText(disp, f"Wait:{student['name']}", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,0), 2)
+        
+        _, buffer = cv.imencode('.jpg', disp, [cv.IMWRITE_JPEG_QUALITY, 80])
+        frame_bytes = buffer.tobytes()
+        
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+    
+    camera.stop()
 
-else:
-    FRAME_WINDOW.error("❌ Cannot open camera")
-    st.error("""
-    **Troubleshooting:**
-    1. Close other apps using camera
-    2. Check camera connection
-    3. Refresh page (Ctrl+R)
-    """)
-    # Clear camera cache on error
-    get_camera.clear()
-    face_status.error("❌ Camera Error")
-    qr_status.error("❌ Camera Error")
-    match_status.error("### ❌ Camera Error")
+# ==================== ROUTES ====================
+@app.route('/')
+def index():
+    return render_template('index.html', algorithms=available_algorithms)
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/api/start', methods=['POST'])
+def start_queue():
+    global state
+    with state.lock:
+        if len(state.queue_list) > 0:
+            if camera.start():
+                state.queue_started = True
+                state.verification_state = 'waiting'
+                state.current_queue_index = 0  # Reset to first student
+                state.verified_student = None  # Clear any previous verified student
+                state.last_face_id = None
+                state.last_face_box = None
+                state.last_face_detected = False
+                state.last_qr_id = None
+                state.last_qr_rect = None
+                state.last_qr_detected = False
+                return jsonify({'success': True})
+            return jsonify({'success': False, 'error': 'Camera failed'})
+        return jsonify({'success': False, 'error': 'Queue empty'})
+
+@app.route('/api/stop', methods=['POST'])
+def stop_queue():
+    global state
+    with state.lock:
+        state.queue_started = False
+        state.verification_state = 'waiting'
+    camera.stop()
+    return jsonify({'success': True})
+
+@app.route('/api/skip', methods=['POST'])
+def skip_current():
+    global state
+    with state.lock:
+        if state.current_queue_index < len(state.queue_list):
+            state.current_queue_index += 1
+            state.verification_state = 'waiting'
+            state.verified_student = None
+            state.last_face_id = None
+            state.last_face_box = None
+            state.last_face_detected = False
+            state.last_qr_id = None
+            state.last_qr_rect = None
+            state.last_qr_detected = False
+            # Check if we've finished the queue
+            if state.current_queue_index >= len(state.queue_list):
+                state.queue_started = False
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'error': 'Queue finished'})
+
+@app.route('/api/status')
+def get_status():
+    global state
+    with state.lock:
+        current_student = None
+        if state.queue_list and state.current_queue_index < len(state.queue_list):
+            current_student = state.queue_list[state.current_queue_index]
+        
+        remaining = 0
+        if state.verification_state == 'displaying':
+            remaining = max(0, state.display_duration - (time.time() - state.display_start_time))
+        
+        verified_img = None
+        if state.verified_student:
+            img_path = find_student_image(state.verified_student['student_id'])
+            if img_path:
+                verified_img = '/' + img_path.replace('\\', '/')
+        
+        return jsonify({
+            'queue_started': state.queue_started,
+            'current_index': state.current_queue_index,
+            'total': len(state.queue_list),
+            'verification_state': state.verification_state,
+            'remaining': int(remaining),
+            'current_student': current_student,
+            'verified_student': state.verified_student,
+            'verified_img': verified_img,
+            'face_detected': state.last_face_detected,
+            'face_id': state.last_face_id,
+            'qr_detected': state.last_qr_detected,
+            'qr_id': state.last_qr_id,
+            'algorithm': state.current_algorithm
+        })
+
+@app.route('/api/settings', methods=['POST'])
+def update_settings():
+    global state
+    data = request.json
+    with state.lock:
+        if 'algorithm' in data:
+            state.current_algorithm = data['algorithm']
+        if 'tts_enabled' in data:
+            state.tts_enabled = data['tts_enabled']
+        if 'display_duration' in data:
+            state.display_duration = data['display_duration']
+    return jsonify({'success': True})
+
+@app.route('/api/queue', methods=['GET'])
+def get_queue():
+    global state
+    with state.lock:
+        return jsonify({
+            'queue': state.queue_list,
+            'current_index': state.current_queue_index
+        })
+
+@app.route('/api/queue/add', methods=['POST'])
+def add_to_queue():
+    global state
+    data = request.json
+    student_id = data.get('student_id')
+    student = db.get_student(student_id)
+    if student:
+        with state.lock:
+            state.queue_list.append(student)
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Student not found'})
+
+@app.route('/api/queue/add_all', methods=['POST'])
+def add_all_to_queue():
+    global state
+    with state.lock:
+        all_students = db.get_all_students()
+        # Only add students who haven't attended
+        state.queue_list = [s for s in all_students if not s.get('attended', False)]
+    return jsonify({'success': True})
+
+@app.route('/api/queue/clear', methods=['POST'])
+def clear_queue():
+    global state
+    with state.lock:
+        state.queue_list = []
+        state.current_queue_index = 0
+        state.verification_state = 'waiting'
+        state.verified_student = None
+        state.last_face_id = None
+        state.last_face_box = None
+        state.last_face_detected = False
+        state.last_qr_id = None
+        state.last_qr_rect = None
+        state.last_qr_detected = False
+    return jsonify({'success': True})
+
+@app.route('/api/queue/remove', methods=['POST'])
+def remove_from_queue():
+    global state
+    data = request.json
+    idx = data.get('index')
+    with state.lock:
+        if 0 <= idx < len(state.queue_list):
+            state.queue_list.pop(idx)
+            if idx < state.current_queue_index:
+                state.current_queue_index -= 1
+            return jsonify({'success': True})
+    return jsonify({'success': False})
+
+@app.route('/api/students')
+def get_students():
+    show_attended = request.args.get('show_attended', 'true').lower() == 'true'
+    students = db.get_all_students()
+    if not show_attended:
+        students = [s for s in students if not s.get('attended', False)]
+    return jsonify(students)
+@app.route('/api/stats')
+def get_stats():
+    stats = db.get_attendance_stats()
+    return jsonify(stats)
+
+@app.route('/api/reset_attendance', methods=['POST'])
+def reset_attendance():
+    global state
+    db.reset_all_attendance()
+    with state.lock:
+        state.current_queue_index = 0
+        state.verification_state = 'waiting'
+        state.verified_student = None
+    return jsonify({'success': True})
+
+@app.route('/Image/<path:filename>')
+def serve_image(filename):
+    from flask import send_from_directory
+    return send_from_directory('Image', filename)
+
+if __name__ == '__main__':
+    app.run(debug=False, threaded=True, host='0.0.0.0', port=5000)
