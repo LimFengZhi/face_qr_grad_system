@@ -1,34 +1,34 @@
-student_id,name,cgpa,faculty,course
-23WMA31290,Peter Parker,3.83,FAFB,Bachelor of Business Accounting and Finance 
-23WMA09998,Tan Jing Wen,2.5,FAFB,Bachelor in Applied Business Analytics 
-23WMA09994,Alex Lioned,2.9,FAFB,Bachelor of Business Administration
-23WMA09993,Samuel Ronaldo,3.22,FAFB,Bachelor of Business Administration
-23WMA09992,James Borne,3.88,FOCS,Bachelor of Software Engineering 
-23WMA09991,Koybe Jame,3.56,FOCS,Bachelor of Software Engineering 
-24WMR08033,Jack Ma,2.87,FCCI,Bachelor of Public Relations
-24WMR08027,Elon Mask,3.18,FCCI,Bachelor of Communication in Broadcasting
-24WMR07983,Jisoo,4,FCCI,Bachelor of Communication in Broadcasting
-24WMR06667,Johson Sam,3.67,FOCS,Bachelor In Data Science
-24WMR08003,Lim Feng Zhi,4,FOCS,Bachelor In Data Science
-24WMR07001,Jason Goh ,3.75,FOCS,Bachelor of Software Engineering 
-24WMR07058,Fan Bing Bing ,4,FOCS,Bachelor of Software Engineering 
-24WMR07088,Pearly Tan ,4,FAFB,Bachelor of Accounting
-24WMR07110,Jung Kook,2.9,FCCI,Bachelor of Communication Studies
-24WMR07123,Lisa Wong,3.85,FOCS,Bachelor of Software Engineering 
-24WMR07578,Jackson Yee,3.12,FOET ,Bachelor of Mechanical Engineering
-24WMR08000,Kim Tae Hyung ,3.49,FSSH,Bachelor of Hospitality Management
-24WMR08011,Tzuyu,3,FCCI,Bachelor of Communication in Advertising
-24WMR08034,Jennie ,3.25,FAFB,Bachelor of Accounting
-24WMR08035,Tho Hui Yee,4,FAFB,Bachelor of Finance
-24WMR08099,Jay Chou,3.67,FOCS,Bachelor of Information Technology in Information Security
-24WMR08999,Tom Cruise ,3.81,FOCS,Bachelor In Data Sceince 
-24WMR07090,Billie Teoh,3.69,FAFB,Bachelor of Finance
-24WMR08098,Ma Jia Qi,3.33,FCCI,Bachelor of Communication Studies
-24WMR06069,Magnus Carlsen,4,FOCS,Bachelor of Software Engineering 
-24WMR06014,Jason Susanto,4,FOCS,Bachelor In Data Sceince 
-24WMR09013,Lee Zi Jia,3.5,FCCI,Bachelor of Communication Studies
-24WMR08018,G Dragon,3.7,FOCS,Bachelor of Software Engineering 
-24WMR07039,Roseanne Park,3.9,FAFB,Bachelor of Accounting
-24WMR08010,Ng Chiao Han,4,FOCS,Bachelor In Data Sceince 
-24WMR07055,Akshay Kumar,3.6,FAFB,Bachelor of Finance
-24WMR00272,Low Zi Qing,3.83,FOCS,Bachelor In Data Sceince 
+student_id,name,cgpa,faculty,course,email
+23WMA31290,Peter Parker,3.83,FAFB,Bachelor of Business Accounting and Finance ,tt@gmail.com
+23WMA09998,Tan Jing Wen,2.5,FAFB,Bachelor in Applied Business Analytics ,tt@gmail.com
+23WMA09994,Alex Lioned,2.9,FAFB,Bachelor of Business Administration,tt@gmail.com
+23WMA09993,Samuel Ronaldo,3.22,FAFB,Bachelor of Business Administration,tt@gmail.com
+23WMA09992,James Borne,3.88,FOCS,Bachelor of Software Engineering ,tt@gmail.com
+23WMA09991,Koybe Jame,3.56,FOCS,Bachelor of Software Engineering ,tt@gmail.com
+24WMR08033,Jack Ma,2.87,FCCI,Bachelor of Public Relations,tt@gmail.com
+24WMR08027,Elon Mask,3.18,FCCI,Bachelor of Communication in Broadcasting,tt@gmail.com
+24WMR07983,Jisoo,4,FCCI,Bachelor of Communication in Broadcasting,tt@gmail.com
+24WMR06667,Johson Sam,3.67,FOCS,Bachelor In Data Science,tt@gmail.com
+24WMR08003,Lim Feng Zhi,4,FOCS,Bachelor In Data Science,limfz-wp23student.tarc.edu.my
+24WMR07001,Jason Goh ,3.75,FOCS,Bachelor of Software Engineering ,tt@gmail.com
+24WMR07058,Fan Bing Bing ,4,FOCS,Bachelor of Software Engineering ,tt@gmail.com
+24WMR07088,Pearly Tan ,4,FAFB,Bachelor of Accounting,tt@gmail.com
+24WMR07110,Jung Kook,2.9,FCCI,Bachelor of Communication Studies,tt@gmail.com
+24WMR07123,Lisa Wong,3.85,FOCS,Bachelor of Software Engineering ,tt@gmail.com
+24WMR07578,Jackson Yee,3.12,FOET ,Bachelor of Mechanical Engineering,tt@gmail.com
+24WMR08000,Kim Tae Hyung ,3.49,FSSH,Bachelor of Hospitality Management,tt@gmail.com
+24WMR08011,Tzuyu,3,FCCI,Bachelor of Communication in Advertising,tt@gmail.com
+24WMR08034,Jennie ,3.25,FAFB,Bachelor of Accounting,tt@gmail.com
+24WMR08035,Tho Hui Yee,4,FAFB,Bachelor of Finance,tt@gmail.com
+24WMR08099,Jay Chou,3.67,FOCS,Bachelor of Information Technology in Information Security,tt@gmail.com
+24WMR08999,Tom Cruise ,3.81,FOCS,Bachelor In Data Sceince ,tt@gmail.com
+24WMR07090,Billie Teoh,3.69,FAFB,Bachelor of Finance,tt@gmail.com
+24WMR08098,Ma Jia Qi,3.33,FCCI,Bachelor of Communication Studies,tt@gmail.com
+24WMR06069,Magnus Carlsen,4,FOCS,Bachelor of Software Engineering ,tt@gmail.com
+24WMR06014,Jason Susanto,4,FOCS,Bachelor In Data Sceince ,tt@gmail.com
+24WMR09013,Lee Zi Jia,3.5,FCCI,Bachelor of Communication Studies,tt@gmail.com
+24WMR08018,G Dragon,3.7,FOCS,Bachelor of Software Engineering ,tt@gmail.com
+24WMR07039,Roseanne Park,3.9,FAFB,Bachelor of Accounting,tt@gmail.com
+24WMR08010,Ng Chiao Han,4,FOCS,Bachelor In Data Sceince ,tt@gmail.com
+24WMR07055,Akshay Kumar,3.6,FAFB,Bachelor of Finance,tt@gmail.com
+24WMR00272,Low Zi Qing,3.83,FOCS,Bachelor In Data Sceince ,tt@gmail.com
