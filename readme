@@ -1,63 +1,63 @@
-# Face and QR Graudate Scan Flask Application
+# Face & QR Graduate Ceremony Detection System
 
-A Face and QR Graudate system supporting multiple algorithms including HOG + Dlib, DeepFace, InsightFace, and MTCNN + FaceNet. Features include QR code scanning, text-to-speech, and email notifications.
+A real-time face recognition and QR code scanning system for graduate ceremonies with Text-to-Speech (TTS) announcements. Supports multiple face recognition algorithms: HOG + Dlib, DeepFace, InsightFace, and MTCNN + FaceNet.
 
 ## Features
 
-- 🎯 Multiple face recognition algorithms (HOG + Dlib, DeepFace, InsightFace, MTCNN + FaceNet)
-- 📷 Real-time camera-based face detection
-- 📱 QR code scanning support
-- 🔊 Text-to-speech notifications
-- 📧 Email notification system
-- 🎓 Student database management
+- 🎓 Graduate verification via face recognition or QR code
+- 🎯 Multiple face recognition algorithms
+- 🔊 Text-to-Speech announcements
+- 📱 QR code scanning
+- 📧 Email notifications
+- 🌐 Web-based interface
 
 ## Prerequisites
 
-- **Python 3.8.8** (recommended)
-- **Git** installed on your system
-- **CMake** and **Visual Studio Build Tools** (for dlib compilation)
+- **Python 3.10.8**
+- **C++ Build Tools** - [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+- **CMake** - [Download CMake](https://cmake.org/download/)
 
 ## Installation
 
-### 1. Clone the Repository
+### 1. Install C++ Build Tools & CMake
 
-```bash
-git clone <your-repo-url>
-cd reasearch_face-flusk_basic
+1. Download and install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+2. During installation, select **"Desktop development with C++"**
+3. Download and install [CMake](https://cmake.org/download/) (add to PATH)
+
+### 2. Clone the Repository
+
+```powershell
+git clone https://github.com/RvTechiNNovate/face_qr_grad_system.git
+cd face_qr_grad_system
 ```
 
-### 2. Create and Activate Virtual Environment
+### 3. Create Virtual Environment
 
-```bash
-# Create virtual environment
+```powershell
 python -m venv venv
+```
 
-# Activate virtual environment
-# Windows (PowerShell)
+### 4. Activate Virtual Environment
+
+```powershell
+# Windows PowerShell
 .\venv\Scripts\Activate.ps1
 
-# Windows (CMD)
+# Windows CMD
 .\venv\Scripts\activate.bat
-
-# Linux/Mac
-source venv/bin/activate
 ```
 
-### 3. Install dlib Dependencies
+### 5. Install Dependencies
 
-Follow the guide: [How to Install Face Recognition in Python on Windows](https://www.geeksforgeeks.org/installation-guide/how-to-install-face-recognition-in-python-on-windows/)
-
-### 4. Install Python Dependencies
-
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
-### 5. Troubleshooting InsightFace Installation
+### 6. Troubleshooting
 
-If you encounter issues with InsightFace, install manually from the provided wheel:
-
-```bash
+If InsightFace installation fails:
+```powershell
 pip install installation_tools/insightface-0.7.3-cp310-cp310-win_amd64.whl
 ```
 
@@ -65,35 +65,41 @@ pip install installation_tools/insightface-0.7.3-cp310-cp310-win_amd64.whl
 
 ### Run the Application
 
-```bash
+```powershell
 python app.py
 ```
 
-The application will start a Flask server. Open your browser and navigate to:
-```
-http://localhost:5000
-```
+Open browser: `http://localhost:5000`
+
+### Train Face Encodings
+
+Open and run `train.ipynb` in Jupyter Notebook to generate face encodings.
 
 ## Project Structure
 
 ```
-reasearch_face-flusk_basic/
-├── app.py                          # Main Flask application
-├── requirements.txt                # Python dependencies
-├── train.ipynb                     # Training notebook for face encodings
+face_qr_grad_system/
+├── app.py
+├── requirements.txt
+├── train.ipynb
+├── README.md
 ├── data/
-│   ├── student_list.csv            # Student database
-│   ├── encodings/                  # Pre-trained face encodings
-│   ├── Image/                      # Student images
-│   ├── qr_codes/                   # Generated QR codes
-│   └── test_set/                   # Test images
+│   ├── student_list.csv
+│   ├── encodings/
+│   ├── Image/
+│   ├── qr_codes/
+│   └── test_set/
+│       ├── ch/
+│       ├── fz/
+│       ├── hy/
+│       └── zq/
 ├── img_processing_class/
-│   ├── fr_algorithm_class/         # Face recognition algorithms
+│   ├── fr_algorithm_class/
 │   │   ├── fr_deepface.py
 │   │   ├── fr_hog_dlib.py
 │   │   ├── fr_insightface.py
 │   │   └── fr_mtcnn_facenet.py
-│   └── utility_class/              # Utility modules
+│   └── utility_class/
 │       ├── adaptive_preprocessor.py
 │       ├── box_helper.py
 │       ├── camera.py
@@ -101,25 +107,56 @@ reasearch_face-flusk_basic/
 │       ├── qr_code_scanner.py
 │       ├── student_database.py
 │       └── text_to_speach.py
-├── installation_tools/             # Manual installation files
-├── static/                         # CSS and JavaScript files
-└── templates/                      # HTML templates
+├── installation_tools/
+│   └── insightface-0.7.3-cp310-cp310-win_amd64.whl
+├── static/
+│   ├── script.js
+│   └── style.css
+└── templates/
+    └── index.html
 ```
 
-## Supported Face Recognition Algorithms
+## Face Recognition Algorithms
 
-| Algorithm | Description |
-|-----------|-------------|
-| HOG + Dlib | Histogram of Oriented Gradients with Dlib |
-| DeepFace | Deep learning-based (Facenet512 + RetinaFace) |
-| InsightFace | Buffalo model for face recognition |
-| MTCNN + FaceNet | Multi-task CNN with FaceNet embeddings |
+| Algorithm | Detection | Embedding | Speed | Accuracy | Best For |
+|-----------|-----------|-----------|-------|----------|----------|
+| **HOG + Dlib** | HOG | Dlib ResNet | ⚡ Fast | Good | CPU-only, real-time |
+| **DeepFace** | RetinaFace | Facenet512 | 🐢 Slow | Excellent | High accuracy needs |
+| **InsightFace** | Built-in | Buffalo | ⚡ Fast | Excellent | GPU acceleration |
+| **MTCNN + FaceNet** | MTCNN | FaceNet | 🔄 Medium | Good | Balanced performance |
 
-## Notes
+### HOG + Dlib
+- Uses **Histogram of Oriented Gradients (HOG)** for face detection
+- **Dlib's ResNet** model for 128-dimensional face embeddings
+- Lightweight, works well on CPU without GPU
+- Best for real-time applications with limited resources
 
-- Ensure your webcam is connected and accessible
-- Face encodings must be generated before running recognition (use `train.ipynb`)
-- Adjust confidence/threshold values in `app.py` for better accuracy
+### DeepFace (Facenet512 + RetinaFace)
+- **RetinaFace** detector for accurate face localization
+- **Facenet512** generates 512-dimensional embeddings
+- Highest accuracy but slower processing
+- Best when accuracy is priority over speed
+
+### InsightFace (Buffalo)
+- All-in-one face analysis framework
+- **Buffalo** model for detection + recognition
+- Optimized for both CPU and GPU
+- Best balance of speed and accuracy
+
+### MTCNN + FaceNet
+- **Multi-task Cascaded CNN (MTCNN)** for face detection
+- **FaceNet** for face embeddings
+- Good accuracy with moderate speed
+- Robust to various face angles
+
+## Algorithm Selection Guide
+
+| Scenario | Recommended Algorithm |
+|----------|----------------------|
+| Low-end hardware / CPU only | HOG + Dlib |
+| Maximum accuracy needed | DeepFace |
+| GPU available, balanced needs | InsightFace |
+| Variable lighting/angles | MTCNN + FaceNet |
 
 ## License
 

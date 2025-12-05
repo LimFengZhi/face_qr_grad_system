@@ -232,29 +232,59 @@ def generate_frames():
                 break
             
             student = state.queue_list[idx]
-            expected_id = student['student_id']
             algo = state.current_algorithm
             model = all_models.get(algo)
             
+            # Only check attended status when in waiting state (not during display countdown)
             if state.verification_state == 'waiting':
-                if frame_count % 2 == 0:
-                    state.last_face_id, state.last_face_box, state.last_face_detected = detect_face_pipeline(frame, model, algo)
-                    state.last_qr_id, state.last_qr_rect, state.last_qr_detected = detect_qr_pipeline(frame)
-                
-                if (state.last_face_id and state.last_qr_id and 
-                    str(state.last_face_id) == str(state.last_qr_id) == str(expected_id)):
-                    state.verification_state = 'displaying'
-                    state.display_start_time = now
-                    state.verified_student = student
-                    db.mark_attended(expected_id)
-                    if state.tts_enabled:
-                        grad_level = graduation_level(student.get('cgpa', 0) or 0)
-                        announcement = f"Congratulations {student['name']}, graduated with {grad_level}"
-                        threading.Thread(target=tts.speak, args=(announcement,), daemon=True).start()
+                # Check if student already attended (sync with database)
+                db_student = db.get_student(student['student_id'])
+                if db_student and db_student.get('attended', False):
+                    # Skip this student, they already attended
+                    state.queue_list[idx]['attended'] = True
+                    state.current_queue_index += 1
+                    state.last_face_id = None
+                    state.last_face_box = None
+                    state.last_face_detected = False
+                    state.last_qr_id = None
+                    state.last_qr_rect = None
+                    state.last_qr_detected = False
+                    # Check if queue finished
+                    if state.current_queue_index >= len(state.queue_list):
+                        state.queue_started = False
+                    # Still render this frame, will get next student on next iteration
+                    disp = draw_detections(frame, None, None, None, None)
+                    cv.putText(disp, f"FPS:{fps} | {algo}", (10, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
+                    cv.putText(disp, "Skipping attended student...", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,0), 2)
+                else:
+                    # Normal detection
+                    expected_id = student['student_id']
+                    if frame_count % 2 == 0:
+                        state.last_face_id, state.last_face_box, state.last_face_detected = detect_face_pipeline(frame, model, algo)
+                        state.last_qr_id, state.last_qr_rect, state.last_qr_detected = detect_qr_pipeline(frame)
+                    
+                    if (state.last_face_id and state.last_qr_id and 
+                        str(state.last_face_id) == str(state.last_qr_id) == str(expected_id)):
+                        state.verification_state = 'displaying'
+                        state.display_start_time = now
+                        state.verified_student = student
+                        db.mark_attended(expected_id)
+                        state.queue_list[idx]['attended'] = True
+                        if state.tts_enabled:
+                            grad_level = graduation_level(student.get('cgpa', 0) or 0)
+                            announcement = f"Congratulations {student['name']}, graduated with {grad_level}"
+                            threading.Thread(target=tts.speak, args=(announcement,), daemon=True).start()
+                    
+                    # Draw detections
+                    disp = draw_detections(frame, state.last_face_id, state.last_face_box, 
+                                           state.last_qr_id, state.last_qr_rect)
+                    cv.putText(disp, f"FPS:{fps} | {algo}", (10, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
+                    cv.putText(disp, f"Wait:{student['name']}", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,0), 2)
             
             elif state.verification_state == 'displaying':
                 remaining = state.display_duration - (now - state.display_start_time)
                 if remaining <= 0:
+                    # Countdown finished, move to next student
                     state.current_queue_index += 1
                     state.verification_state = 'waiting'
                     state.verified_student = None
@@ -264,12 +294,17 @@ def generate_frames():
                     state.last_qr_id = None
                     state.last_qr_rect = None
                     state.last_qr_detected = False
+                
+                # Draw frame during display (show verified student info)
+                disp = draw_detections(frame, state.last_face_id, state.last_face_box, 
+                                       state.last_qr_id, state.last_qr_rect)
+                cv.putText(disp, f"FPS:{fps} | {algo}", (10, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
+                cv.putText(disp, f"VERIFIED: {student['name']}", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+                cv.putText(disp, f"Next in: {int(remaining)}s", (10, 75), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,255), 2)
             
-            # Draw detections
-            disp = draw_detections(frame, state.last_face_id, state.last_face_box, 
-                                   state.last_qr_id, state.last_qr_rect)
-            cv.putText(disp, f"FPS:{fps}", (10, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
-            cv.putText(disp, f"Wait:{student['name']}", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,0), 2)
+            else:
+                # Fallback
+                disp = frame.copy()
         
         _, buffer = cv.imencode('.jpg', disp, [cv.IMWRITE_JPEG_QUALITY, 80])
         frame_bytes = buffer.tobytes()
@@ -380,7 +415,25 @@ def update_settings():
     data = request.json
     with state.lock:
         if 'algorithm' in data:
-            state.current_algorithm = data['algorithm']
+            new_algo = data['algorithm']
+            if new_algo != state.current_algorithm:
+                state.current_algorithm = new_algo
+                # Clear detection state when switching algorithm
+                state.last_face_id = None
+                state.last_face_box = None
+                state.last_face_detected = False
+                print(f"🔄 Switched to {new_algo}")
+                
+                # Refresh queue from database to sync attended status
+                refreshed_queue = []
+                for student in state.queue_list:
+                    db_student = db.get_student(student['student_id'])
+                    if db_student:
+                        refreshed_queue.append(db_student)
+                    else:
+                        refreshed_queue.append(student)
+                state.queue_list = refreshed_queue
+            
         if 'tts_enabled' in data:
             state.tts_enabled = data['tts_enabled']
     return jsonify({'success': True})
@@ -389,6 +442,16 @@ def update_settings():
 def get_queue():
     global state
     with state.lock:
+        # Refresh attended status from database
+        refreshed_queue = []
+        for student in state.queue_list:
+            db_student = db.get_student(student['student_id'])
+            if db_student:
+                refreshed_queue.append(db_student)
+            else:
+                refreshed_queue.append(student)
+        state.queue_list = refreshed_queue
+        
         return jsonify({
             'queue': state.queue_list,
             'current_index': state.current_queue_index
