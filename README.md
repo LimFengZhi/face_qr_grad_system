@@ -70,30 +70,6 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-### Step 3: Troubleshooting
-
-<details>
-<summary>❌ InsightFace installation fails</summary>
-
-```powershell
-pip install installation_tools/insightface-0.7.3-cp310-cp310-win_amd64.whl
-```
-</details>
-
-<details>
-<summary>❌ Dlib installation fails</summary>
-
-```powershell
-# Ensure CMake is installed and in PATH
-cmake --version
-
-# Try installing dlib separately
-pip install dlib
-```
-</details>
-
----
-
 ## 💻 Usage
 
 ### Run the Application
