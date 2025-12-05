@@ -1,0 +1,419 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+h1 {
+    text-align: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    margin-bottom: 20px;
+    border-radius: 10px;
+}
+
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 15px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    transition: all 0.3s;
+}
+
+.tab-btn.active {
+    background: #667eea;
+    color: white;
+}
+
+.tab-btn:not(.active) {
+    background: #2d2d44;
+    color: #aaa;
+}
+
+.tab-btn:hover:not(.active) {
+    background: #3d3d54;
+}
+
+/* Tab Content */
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Grid Layout */
+.grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+}
+
+/* Cards */
+.card {
+    background: #2d2d44;
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.card h2 {
+    margin-bottom: 15px;
+    color: #667eea;
+}
+
+/* Video Container */
+#video-container {
+    position: relative;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#video-feed {
+    width: 100%;
+    display: block;
+}
+
+#video-placeholder {
+    width: 100%;
+    aspect-ratio: 4/3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a1a2e;
+    color: #666;
+    font-size: 18px;
+}
+
+/* Status Boxes */
+.status-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.status-box {
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.status-box.success {
+    background: #2ecc71;
+    color: white;
+}
+
+.status-box.error {
+    background: #e74c3c;
+    color: white;
+}
+
+.status-box.info {
+    background: #3498db;
+    color: white;
+}
+
+.status-box.warning {
+    background: #f39c12;
+    color: white;
+}
+
+/* Buttons */
+.controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.btn {
+    padding: 15px 30px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: #667eea;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #5a6fd6;
+}
+
+.btn-danger {
+    background: #e74c3c;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c0392b;
+}
+
+.btn-secondary {
+    background: #555;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #666;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Student Card */
+.student-card {
+    text-align: center;
+}
+
+.student-card img {
+    max-width: 200px;
+    border-radius: 12px;
+    margin-bottom: 15px;
+}
+
+.student-card h3 {
+    color: #2ecc71;
+    font-size: 24px;
+    margin-bottom: 15px;
+}
+
+.student-card p {
+    color: #aaa;
+    margin-top: 5px;
+}
+
+.student-details {
+    background: #1a1a2e;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 15px 0;
+    text-align: left;
+}
+
+.student-details p {
+    margin: 8px 0;
+    color: #ddd;
+    font-size: 14px;
+}
+
+.student-details p strong {
+    color: #667eea;
+    min-width: 80px;
+    display: inline-block;
+}
+
+.graduation-level {
+    font-size: 24px;
+    font-weight: bold;
+    color: #ffd700;
+    text-align: center;
+    padding: 10px;
+    margin: 10px 0;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 8px;
+    border: 2px solid #ffd700;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+.countdown {
+    font-size: 48px;
+    color: #667eea;
+    margin-top: 20px;
+}
+
+.countdown {
+    font-size: 48px;
+    color: #667eea;
+    margin-top: 20px;
+}
+
+/* Queue List */
+.queue-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.queue-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    background: #1a1a2e;
+    margin-bottom: 8px;
+    border-radius: 6px;
+}
+
+.queue-item.done {
+    opacity: 0.5;
+}
+
+.queue-item.current {
+    border-left: 4px solid #667eea;
+}
+
+.queue-item .name {
+    font-weight: bold;
+}
+
+.queue-item .id {
+    color: #888;
+    font-size: 12px;
+}
+
+.queue-item .remove-btn {
+    background: #e74c3c;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.queue-item .remove-btn:hover {
+    background: #c0392b;
+}
+
+/* Settings */
+.settings-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+    gap: 15px;
+}
+
+.settings-row label {
+    min-width: 120px;
+}
+
+.settings-row select,
+.settings-row input[type="range"] {
+    flex: 1;
+    padding: 10px;
+    border-radius: 6px;
+    border: none;
+    background: #1a1a2e;
+    color: white;
+}
+
+.settings-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+/* Add Section */
+.add-section {
+    margin-bottom: 20px;
+}
+
+.add-section select {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    border: none;
+    background: #1a1a2e;
+    color: white;
+}
+
+/* Statistics */
+.stats {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-item .value {
+    font-size: 32px;
+    font-weight: bold;
+    color: #667eea;
+}
+
+.stat-item .label {
+    color: #888;
+}
+
+/* Waiting Info */
+.waiting-info {
+    background: #3498db;
+    color: white;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+}
+
+.waiting-info h4 {
+    margin-bottom: 5px;
+}
+
+/* Scrollbar */
+.queue-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.queue-list::-webkit-scrollbar-track {
+    background: #1a1a2e;
+    border-radius: 4px;
+}
+
+.queue-list::-webkit-scrollbar-thumb {
+    background: #667eea;
+    border-radius: 4px;
+}
+
+.queue-list::-webkit-scrollbar-thumb:hover {
+    background: #5a6fd6;
+}
+
+/* ...existing code... (add these styles) */
+
+#sender-email, #sender-password {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #444;
+    border-radius: 5px;
+    background: #2a2a3e;
+    color: white;
+    box-sizing: border-box;
+}
+
+#sender-email::placeholder, #sender-password::placeholder {
+    color: #888;
+}
