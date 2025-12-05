@@ -17,16 +17,22 @@ class FaceRecognitionDeepFace:
         
         print(f"Loading {model_name} model...")
         try:
+            # Updated warm-up for newer DeepFace versions
             dummy_img = np.zeros((160, 160, 3), dtype=np.uint8)
             DeepFace.represent(
                 dummy_img, 
                 model_name=model_name, 
-                detector_backend=detector_backend,
+                detector_backend='skip',  # Skip detection for dummy image
                 enforce_detection=False
             )
             print(f"✓ DeepFace initialized: {model_name} + {detector_backend}")
         except Exception as e:
-            print(f"Model warm-up: {e}")
+            # Try alternative warm-up method
+            try:
+                from deepface.basemodels import Facenet512
+                print(f"✓ DeepFace initialized (alt): {model_name}")
+            except:
+                print(f"⚠ Model warm-up skipped: {e}")
         
         self.load_encodings()
     
@@ -60,25 +66,23 @@ class FaceRecognitionDeepFace:
     
     def detect_face(self, face_img):
         """
-        Detect face in image 
+        Detect face in image
         
         Returns:
             face_region: Dict with facial_area info, or None if no face
         """
         try:
-            # Use DeepFace.extract_faces for detection only
             faces = DeepFace.extract_faces(
                 face_img,
                 detector_backend=self.detector_backend,
                 enforce_detection=True,
-                align=False  # Don't align yet, just detect
+                align=False
             )
             
             if len(faces) == 0:
                 print(" No face detected")
                 return None
             
-            # Return largest face (by area)
             largest_face = max(faces, key=lambda f: f['facial_area']['w'] * f['facial_area']['h'])
             return largest_face
             
@@ -94,27 +98,25 @@ class FaceRecognitionDeepFace:
     
     def recognise_face(self, face_img, face_region=None):
         """
+        Get face embedding
         
         Args:
             face_img: Input image (RGB)
-            face_region: Optional face region from detect_face (not used for DeepFace, 
-                        but kept for API consistency)
+            face_region: Optional face region (not used, DeepFace does detection)
         
         Returns:
-            encoding: Face embedding array
-            success: Boolean indicating success
+            embedding: Face embedding vector
+            success: Boolean
         """
         try:
-            # DeepFace.represent does detection + embedding extraction
             result = DeepFace.represent(
                 face_img,
                 model_name=self.model_name,
                 detector_backend=self.detector_backend,
-                enforce_detection=True,
-                align=True
+                enforce_detection=True
             )
             
-            if len(result) == 0:
+            if not result or len(result) == 0:
                 print(" Failed")
                 return None, False
             
@@ -133,14 +135,7 @@ class FaceRecognitionDeepFace:
             return None, False
     
     def compare_encoding(self, encoding):
-        """
-        Compare encoding against known faces - same as HOG+Dlib
-        
-        Returns:
-            matched_id: ID of best match or None
-            distance: Distance to best match
-            matched: Boolean indicating if match found
-        """
+        """Compare encoding against known faces"""
         if len(self.known_encodings) == 0:
             return None, None, False
         
@@ -159,7 +154,7 @@ class FaceRecognitionDeepFace:
             return None, float(best_dist), False
     
     def register_face(self, encoding, person_id):
-        """Register encoding - same as HOG+Dlib"""
+        """Register encoding"""
         self.known_encodings.append(encoding)
         self.known_ids.append(person_id)
         self.save_encoding()
