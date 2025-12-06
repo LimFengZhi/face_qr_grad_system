@@ -116,15 +116,6 @@ python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 ```
 
 ### Step 4: Troubleshooting
-
-<details>
-<summary>❌ InsightFace installation fails</summary>
-
-```powershell
-pip install installation_tools/insightface-0.7.3-cp310-cp310-win_amd64.whl
-```
-</details>
-
 <details>
 <summary>❌ Dlib installation fails</summary>
 
