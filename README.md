@@ -31,21 +31,11 @@
 
 ---
 
-## 🚀 What's New in v2.0
-
 ### 🎯 YOLOv8 Person Tracking
 - **Zone-based verification**: Detects when person enters verification zone (30%-70% horizontal, 10%-90% vertical)
 - **Centroid tracking**: Maintains person ID across frames
 - **Single person mode**: `max_tracks=1` for focused scanning
 - **Smart detection**: Face/QR scanning only activates when person is in zone
-
-### 📱 LED-Optimized QR Scanner
-- **Glare removal**: Morphological top-hat + inpainting for bright LED screens
-- **Flicker reduction**: Median filtering for LED refresh artifacts
-- **Illumination normalization**: Handles uneven lighting and spotlights
-- **Multi-scale pyramid**: 6 scales (1x to 5x) for small and distant QR codes
-- **Region detection**: Automatically finds and super-upscales tiny QR codes (3% of frame)
-- **4-step scanning strategy**: Direct → LED preprocess → Multi-scale → Otsu threshold
 
 ### ⚡ Performance Improvements
 - **Parallel detection**: ThreadPoolExecutor for simultaneous face + QR scanning
