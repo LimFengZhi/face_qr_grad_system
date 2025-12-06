@@ -1,4 +1,3 @@
-```markdown
 # 🎓 Face & QR Graduate Ceremony Detection System
 
 <p align="center">
