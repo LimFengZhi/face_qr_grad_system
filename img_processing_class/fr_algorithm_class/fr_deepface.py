@@ -27,12 +27,7 @@ class FaceRecognitionDeepFace:
             )
             print(f"✓ DeepFace initialized: {model_name} + {detector_backend}")
         except Exception as e:
-            # Try alternative warm-up method
-            try:
-                from deepface.basemodels import Facenet512
-                print(f"✓ DeepFace initialized (alt): {model_name}")
-            except:
-                print(f"⚠ Model warm-up skipped: {e}")
+            print(f"⚠ Model warm-up skipped: {e}")
         
         self.load_encodings()
     
