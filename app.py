@@ -3,7 +3,7 @@ import cv2 as cv
 import threading
 import time
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from img_processing_class.utility_class.adaptive_preprocessor import AdaptivePreprocessor
 from img_processing_class.utility_class.qr_code_scanner import QRCodeScanner
@@ -15,6 +15,7 @@ from img_processing_class.fr_algorithm_class.fr_insightface import FaceRecogniti
 from img_processing_class.fr_algorithm_class.fr_hog_dlib import FaceRecognitionHogDlib
 from img_processing_class.fr_algorithm_class.fr_deepface import FaceRecognitionDeepFace
 from img_processing_class.utility_class.email_sender import get_email_sender
+from img_processing_class.utility_class.person_tracker import PersonTracker
 
 app = Flask(__name__)
 
@@ -36,7 +37,8 @@ class AppState:
         self.last_qr_rect = None
         self.last_qr_detected = False
         self.verified_student = None
-        self.email_enabled = False 
+        self.email_enabled = False
+        self.person_tracking_enabled = True
         self.lock = threading.Lock()
 
 state = AppState()
@@ -85,6 +87,20 @@ def load_mtcnn_facenet():
         print(f"MTCNN + FaceNet failed: {e}")
         return ("MTCNN + FaceNet", None)
 
+def load_person_tracker():
+    """Load YOLOv8 person tracker"""
+    try:
+        tracker = PersonTracker(
+            model_name='yolov8n.pt',
+            confidence=0.5,
+            verification_zone=(0.3, 0.1, 0.7, 0.90),  # Center zone
+            max_tracks=1      # Only track 1 person at a time
+        )
+        return tracker
+    except Exception as e:
+        print(f"Person Tracker failed: {e}")
+        return None
+
 # Load models in parallel (except MTCNN)
 all_models = {}
 futures = [
@@ -102,6 +118,9 @@ name, model = load_mtcnn_facenet()
 all_models[name] = model
 if model:
     print(f"✓ {name} loaded")
+
+# Load person tracker
+person_tracker = load_person_tracker()
 
 preprocessor = AdaptivePreprocessor()
 qr_scanner = QRCodeScanner()
@@ -203,11 +222,14 @@ def find_student_image(student_id):
 camera = Camera()
 
 def generate_frames():
-    global state
+    global state, person_tracker
     frame_count = 0
     fps_time = time.time()
     fps_count = 0
     fps = 0
+    
+    # Create executor for parallel detection
+    detection_executor = ThreadPoolExecutor(max_workers=2)
     
     while state.queue_started:
         frame = camera.read()
@@ -224,6 +246,11 @@ def generate_frames():
             fps_time = time.time()
         
         now = time.time()
+        
+        # Person tracking detection (runs every frame for smooth tracking)
+        person_in_zone = None
+        if state.person_tracking_enabled and person_tracker is not None:
+            person_in_zone = person_tracker.get_person_in_zone(frame)
         
         with state.lock:
             idx = state.current_queue_index
@@ -253,15 +280,38 @@ def generate_frames():
                     if state.current_queue_index >= len(state.queue_list):
                         state.queue_started = False
                     # Still render this frame, will get next student on next iteration
-                    disp = draw_detections(frame, None, None, None, None)
+                    if state.person_tracking_enabled and person_tracker:
+                        disp = person_tracker.draw_tracking(frame)
+                    else:
+                        disp = draw_detections(frame, None, None, None, None)
                     cv.putText(disp, f"FPS:{fps} | {algo}", (10, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
                     cv.putText(disp, "Skipping attended student...", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,0), 2)
                 else:
-                    # Normal detection
+                    # Normal detection - only run if person is in zone (or tracking disabled)
                     expected_id = student['student_id']
-                    if frame_count % 2 == 0:
-                        state.last_face_id, state.last_face_box, state.last_face_detected = detect_face_pipeline(frame, model, algo)
-                        state.last_qr_id, state.last_qr_rect, state.last_qr_detected = detect_qr_pipeline(frame)
+                    
+                    # Check if we should run face/QR detection
+                    should_detect = True
+                    if state.person_tracking_enabled and person_tracker:
+                        # Only detect if person is in verification zone
+                        should_detect = person_in_zone is not None
+
+                    if should_detect and frame_count % 30 == 0:
+                        # Run face and QR detection
+                        face_future = detection_executor.submit(detect_face_pipeline, frame.copy(), model, algo)
+                        qr_future = detection_executor.submit(detect_qr_pipeline, frame.copy())
+                        
+                        # Wait for both to complete
+                        state.last_face_id, state.last_face_box, state.last_face_detected = face_future.result()
+                        state.last_qr_id, state.last_qr_rect, state.last_qr_detected = qr_future.result()
+                    elif not should_detect:
+                        # Reset when no person in zone
+                        state.last_face_id = None
+                        state.last_face_box = None
+                        state.last_face_detected = False
+                        state.last_qr_id = None
+                        state.last_qr_rect = None
+                        state.last_qr_detected = False
                     
                     if (state.last_face_id and state.last_qr_id and 
                         str(state.last_face_id) == str(state.last_qr_id) == str(expected_id)):
@@ -275,11 +325,103 @@ def generate_frames():
                             announcement = f"Congratulations {student['name']}, graduated with {grad_level}"
                             threading.Thread(target=tts.speak, args=(announcement,), daemon=True).start()
                     
-                    # Draw detections
-                    disp = draw_detections(frame, state.last_face_id, state.last_face_box, 
-                                           state.last_qr_id, state.last_qr_rect)
+                    # Draw detections with person tracking overlay
+                    if state.person_tracking_enabled and person_tracker:
+                        disp = person_tracker.draw_tracking(frame)
+                        # Overlay face/QR detections on top
+                        if state.last_face_box:
+                            x1, y1, x2, y2 = state.last_face_box
+                            # Green if matches expected ID, Red if wrong person detected
+                            face_match = state.last_face_id and str(state.last_face_id) == str(expected_id)
+                            if face_match:
+                                color = (0, 255, 0)  # Green - correct person
+                                label = f"Face: {state.last_face_id}"
+                            elif state.last_face_id:
+                                color = (0, 0, 255)  # Red - wrong person
+                                label = f"Face: {state.last_face_id}"
+                            else:
+                                color = (0, 165, 255)  # Orange - face detected but no match
+                                label = "Face: Unknown"
+                            cv.rectangle(disp, (x1, y1), (x2, y2), color, 2)
+                            cv.putText(disp, label, (x1, y1 - 10), cv.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                        
+                        if state.last_qr_rect:
+                            x, y, w, h = state.last_qr_rect
+                            # Green if matches expected ID, Red if wrong QR
+                            qr_match = state.last_qr_id and str(state.last_qr_id) == str(expected_id)
+                            if qr_match:
+                                color = (0, 255, 0)  # Green - correct QR
+                                label = f"QR: {state.last_qr_id}"
+                            elif state.last_qr_id:
+                                color = (0, 0, 255)  # Red - wrong QR
+                                label = f"QR: {state.last_qr_id}"
+                            else:
+                                color = (0, 165, 255)  # Orange - QR detected but no data
+                                label = "QR: None"
+                            cv.rectangle(disp, (x, y), (x + w, y + h), color, 2)
+                            cv.putText(disp, label, (x, y - 10), cv.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                    else:
+                        disp = draw_detections(frame, state.last_face_id, state.last_face_box, 
+                                               state.last_qr_id, state.last_qr_rect)
+                    
                     cv.putText(disp, f"FPS:{fps} | {algo}", (10, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
-                    cv.putText(disp, f"Wait:{student['name']}", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,0), 2)
+                    
+                     # Show waiting status with detailed feedback
+                    if state.person_tracking_enabled and person_tracker:
+                        if person_in_zone:
+                            # Person is in zone - show detailed status
+                            status_msg = f"Wait: {student['name']}"
+                            cv.putText(disp, status_msg, (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+                            
+                            # Check face and QR status
+                            face_match = state.last_face_id and str(state.last_face_id) == str(expected_id)
+                            qr_match = state.last_qr_id and str(state.last_qr_id) == str(expected_id)
+                            
+                            if state.last_face_detected or state.last_qr_detected:
+                                if not face_match and not qr_match:
+                                    # Both wrong
+                                    if state.last_face_id and state.last_qr_id:
+                                        detail = "Wrong Face & QR"
+                                        color = (0, 0, 255)  # Red
+                                    elif state.last_face_id:
+                                        detail = "Wrong Face, QR Required"
+                                        color = (0, 165, 255)  # Orange
+                                    elif state.last_qr_id:
+                                        detail = "Face Required, Wrong QR"
+                                        color = (0, 165, 255)  # Orange
+                                    else:
+                                        detail = "Scanning..."
+                                        color = (255, 255, 0)  # Yellow
+                                elif face_match and not qr_match:
+                                    # Face correct, QR wrong or missing
+                                    if state.last_qr_id:
+                                        detail = f"Face OK ({state.last_face_id}), Wrong QR"
+                                        color = (0, 165, 255)  # Orange
+                                    else:
+                                        detail = f"Face OK ({state.last_face_id}), QR Required"
+                                        color = (0, 255, 255)  # Cyan
+                                elif not face_match and qr_match:
+                                    # QR correct, face wrong or missing
+                                    if state.last_face_id:
+                                        detail = f"Wrong Face, QR OK ({state.last_qr_id})"
+                                        color = (0, 165, 255)  # Orange
+                                    else:
+                                        detail = f"Face Required, QR OK ({state.last_qr_id})"
+                                        color = (0, 255, 255)  # Cyan
+                                else:
+                                    # Both correct (will verify next)
+                                    detail = f"Face & QR Matched ({expected_id})"
+                                    color = (0, 255, 0)  # Green
+                                
+                                cv.putText(disp, detail, (10, 75), cv.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                            else:
+                                cv.putText(disp, "Scanning...", (10, 75), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+                        else:
+                            # No person in zone
+                            cv.putText(disp, f"Wait: {student['name']} - No person in zone", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 2)
+                    else:
+                        # Person tracking disabled
+                        cv.putText(disp, f"Wait:{student['name']}", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,0), 2)
             
             elif state.verification_state == 'displaying':
                 remaining = state.display_duration - (now - state.display_start_time)
@@ -294,10 +436,16 @@ def generate_frames():
                     state.last_qr_id = None
                     state.last_qr_rect = None
                     state.last_qr_detected = False
+                    # Reset person tracker state for the verified track
+                    if person_tracker and person_in_zone:
+                        person_tracker.reset_track_state(person_in_zone['track_id'])
                 
                 # Draw frame during display (show verified student info)
-                disp = draw_detections(frame, state.last_face_id, state.last_face_box, 
-                                       state.last_qr_id, state.last_qr_rect)
+                if state.person_tracking_enabled and person_tracker:
+                    disp = person_tracker.draw_tracking(frame)
+                else:
+                    disp = draw_detections(frame, state.last_face_id, state.last_face_box, 
+                                           state.last_qr_id, state.last_qr_rect)
                 cv.putText(disp, f"FPS:{fps} | {algo}", (10, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
                 cv.putText(disp, f"VERIFIED: {student['name']}", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
                 cv.putText(disp, f"Next in: {int(remaining)}s", (10, 75), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,255), 2)
@@ -374,7 +522,7 @@ def skip_current():
 
 @app.route('/api/status')
 def get_status():
-    global state
+    global state, person_tracker
     with state.lock:
         current_student = None
         if state.queue_list and state.current_queue_index < len(state.queue_list):
@@ -392,6 +540,11 @@ def get_status():
                 verified_img = '/' + img_path.replace('\\', '/')
             grad_level = graduation_level(state.verified_student.get('cgpa', 0) or 0)
 
+        # Get person tracking stats
+        tracking_stats = None
+        if person_tracker:
+            tracking_stats = person_tracker.get_stats()
+
         return jsonify({
             'queue_started': state.queue_started,
             'current_index': state.current_queue_index,
@@ -406,7 +559,9 @@ def get_status():
             'face_id': state.last_face_id,
             'qr_detected': state.last_qr_detected,
             'qr_id': state.last_qr_id,
-            'algorithm': state.current_algorithm
+            'algorithm': state.current_algorithm,
+            'person_tracking_enabled': state.person_tracking_enabled,
+            'tracking_stats': tracking_stats
         })
 
 @app.route('/api/settings', methods=['POST'])
@@ -436,6 +591,12 @@ def update_settings():
             
         if 'tts_enabled' in data:
             state.tts_enabled = data['tts_enabled']
+        
+        # NEW: Toggle person tracking
+        if 'person_tracking_enabled' in data:
+            state.person_tracking_enabled = data['person_tracking_enabled']
+            print(f"🔄 Person tracking: {'enabled' if state.person_tracking_enabled else 'disabled'}")
+    
     return jsonify({'success': True})
 
 @app.route('/api/queue', methods=['GET'])
