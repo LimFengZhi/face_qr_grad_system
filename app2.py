@@ -38,7 +38,7 @@ class AppState:
         self.last_qr_detected = False
         self.verified_student = None
         self.email_enabled = False
-        self.person_tracking_enabled = True  # NEW: Toggle person tracking
+        self.person_tracking_enabled = True
         self.lock = threading.Lock()
 
 state = AppState()
@@ -93,7 +93,7 @@ def load_person_tracker():
         tracker = PersonTracker(
             model_name='yolov8n.pt',
             confidence=0.5,
-            verification_zone=(0.25, 0.1, 0.75, 0.95),  # Center zone
+            verification_zone=(0.3, 0.1, 0.7, 0.90),  # Center zone
             max_tracks=1      # Only track 1 person at a time
         )
         return tracker
@@ -294,9 +294,9 @@ def generate_frames():
                     should_detect = True
                     if state.person_tracking_enabled and person_tracker:
                         # Only detect if person is in verification zone
-                        should_detect = person_in_zone is not None  # ← This is correct!
+                        should_detect = person_in_zone is not None
 
-                    if should_detect and frame_count % 2 == 0:
+                    if should_detect and frame_count % 3 == 0:
                         # Run face and QR detection
                         face_future = detection_executor.submit(detect_face_pipeline, frame.copy(), model, algo)
                         qr_future = detection_executor.submit(detect_qr_pipeline, frame.copy())
@@ -331,15 +331,34 @@ def generate_frames():
                         # Overlay face/QR detections on top
                         if state.last_face_box:
                             x1, y1, x2, y2 = state.last_face_box
-                            color = (0, 255, 0) if state.last_face_id else (0, 0, 255)
+                            # Green if matches expected ID, Red if wrong person detected
+                            face_match = state.last_face_id and str(state.last_face_id) == str(expected_id)
+                            if face_match:
+                                color = (0, 255, 0)  # Green - correct person
+                                label = f"Face: {state.last_face_id}"
+                            elif state.last_face_id:
+                                color = (0, 0, 255)  # Red - wrong person
+                                label = f"Face: {state.last_face_id}"
+                            else:
+                                color = (0, 165, 255)  # Orange - face detected but no match
+                                label = "Face: Unknown"
                             cv.rectangle(disp, (x1, y1), (x2, y2), color, 2)
-                            label = f"Face: {state.last_face_id}" if state.last_face_id else "Face: Unknown"
                             cv.putText(disp, label, (x1, y1 - 10), cv.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                        
                         if state.last_qr_rect:
                             x, y, w, h = state.last_qr_rect
-                            color = (0, 255, 0) if state.last_qr_id else (0, 0, 255)
+                            # Green if matches expected ID, Red if wrong QR
+                            qr_match = state.last_qr_id and str(state.last_qr_id) == str(expected_id)
+                            if qr_match:
+                                color = (0, 255, 0)  # Green - correct QR
+                                label = f"QR: {state.last_qr_id}"
+                            elif state.last_qr_id:
+                                color = (0, 0, 255)  # Red - wrong QR
+                                label = f"QR: {state.last_qr_id}"
+                            else:
+                                color = (0, 165, 255)  # Orange - QR detected but no data
+                                label = "QR: None"
                             cv.rectangle(disp, (x, y), (x + w, y + h), color, 2)
-                            label = f"QR: {state.last_qr_id}" if state.last_qr_id else "QR: None"
                             cv.putText(disp, label, (x, y - 10), cv.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                     else:
                         disp = draw_detections(frame, state.last_face_id, state.last_face_box, 
@@ -347,13 +366,61 @@ def generate_frames():
                     
                     cv.putText(disp, f"FPS:{fps} | {algo}", (10, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
                     
-                    # Show waiting status with person tracking info
+                     # Show waiting status with detailed feedback
                     if state.person_tracking_enabled and person_tracker:
                         if person_in_zone:
-                            cv.putText(disp, f"Wait:{student['name']} - PERSON IN ZONE", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+                            # Person is in zone - show detailed status
+                            status_msg = f"Wait: {student['name']}"
+                            cv.putText(disp, status_msg, (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+                            
+                            # Check face and QR status
+                            face_match = state.last_face_id and str(state.last_face_id) == str(expected_id)
+                            qr_match = state.last_qr_id and str(state.last_qr_id) == str(expected_id)
+                            
+                            if state.last_face_detected or state.last_qr_detected:
+                                if not face_match and not qr_match:
+                                    # Both wrong
+                                    if state.last_face_id and state.last_qr_id:
+                                        detail = "Wrong Face & QR"
+                                        color = (0, 0, 255)  # Red
+                                    elif state.last_face_id:
+                                        detail = "Wrong Face, QR Required"
+                                        color = (0, 165, 255)  # Orange
+                                    elif state.last_qr_id:
+                                        detail = "Face Required, Wrong QR"
+                                        color = (0, 165, 255)  # Orange
+                                    else:
+                                        detail = "Scanning..."
+                                        color = (255, 255, 0)  # Yellow
+                                elif face_match and not qr_match:
+                                    # Face correct, QR wrong or missing
+                                    if state.last_qr_id:
+                                        detail = f"Face OK ({state.last_face_id}), Wrong QR"
+                                        color = (0, 165, 255)  # Orange
+                                    else:
+                                        detail = f"Face OK ({state.last_face_id}), QR Required"
+                                        color = (0, 255, 255)  # Cyan
+                                elif not face_match and qr_match:
+                                    # QR correct, face wrong or missing
+                                    if state.last_face_id:
+                                        detail = f"Wrong Face, QR OK ({state.last_qr_id})"
+                                        color = (0, 165, 255)  # Orange
+                                    else:
+                                        detail = f"Face Required, QR OK ({state.last_qr_id})"
+                                        color = (0, 255, 255)  # Cyan
+                                else:
+                                    # Both correct (will verify next)
+                                    detail = f"Face & QR Matched ({expected_id})"
+                                    color = (0, 255, 0)  # Green
+                                
+                                cv.putText(disp, detail, (10, 75), cv.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                            else:
+                                cv.putText(disp, "Scanning...", (10, 75), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
                         else:
-                            cv.putText(disp, f"Wait:{student['name']} - No person in zone", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 2)
+                            # No person in zone
+                            cv.putText(disp, f"Wait: {student['name']} - No person in zone", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 2)
                     else:
+                        # Person tracking disabled
                         cv.putText(disp, f"Wait:{student['name']}", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,0), 2)
             
             elif state.verification_state == 'displaying':

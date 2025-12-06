@@ -307,15 +307,12 @@ class PersonTracker:
                 state = self.track_states[track_id]
                 
                 # Color based on state
-                if state['verified']:
-                    color = (0, 255, 0)  # Green - verified
-                    label = f"ID:{track_id} VERIFIED"
-                elif state['in_zone']:
-                    color = (0, 255, 255)  # Yellow - in zone
-                    label = f"ID:{track_id} IN ZONE"
+                if state['in_zone']:
+                    color = (255, 0, 255)  # Purple - in zone
+                    label = "IN ZONE"
                 else:
                     color = (255, 0, 0)  # Blue - outside zone
-                    label = f"ID:{track_id}"
+                    label = None  # Don't show label when outside
                 
                 # Draw bounding box
                 cv.rectangle(disp, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 2)
