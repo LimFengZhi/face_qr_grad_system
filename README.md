@@ -495,7 +495,7 @@ If you encounter any issues:
 
 1. Check the Troubleshooting section
 2. Review API Endpoints documentation
-3. Test components individually (test_qr.py)
+3. Test components individually
 4. Open an issue on GitHub with:
    - Error message
    - Python version
