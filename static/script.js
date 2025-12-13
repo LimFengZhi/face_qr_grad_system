@@ -293,6 +293,10 @@ async function removeFromQueue(idx) {
 }
 
 async function resetAttendance() {
+    if (!confirm('⚠️ Are you sure you want to reset ALL attendance records?')) {
+        return;
+    }
+    
     await fetch('/api/reset_attendance', {method: 'POST'});
     // Wait a moment for database to update
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -300,11 +304,15 @@ async function resetAttendance() {
     await loadStats();
     await loadStudents();
     await loadQueue();
+    await loadAllStudentsForDelete();  // Add this line to refresh delete list
+    
     // Force refresh the select element
     const select = document.getElementById('student-select');
     if (select) {
         select.dispatchEvent(new Event('change'));
     }
+    
+    alert('✅ Attendance reset successfully!');
 }
 
 async function toggleEmail() {
@@ -579,6 +587,7 @@ async function loadAllStudentsForDelete() {
         
         select.innerHTML = '<option value="">Select student to delete...</option>';
         students.forEach(s => {
+            // Show ✅ if attended, empty if not
             const attended = s.attended ? ' ✅' : '';
             select.innerHTML += `<option value="${s.student_id}" data-name="${s.name}">${s.name} (${s.student_id})${attended}</option>`;
         });
