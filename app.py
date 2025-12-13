@@ -416,7 +416,8 @@ def generate_frames():
                                 # Draw on top right corner
                                 h, w = disp.shape[:2]
                                 text_size = cv.getTextSize(detail, cv.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-                                text_x = w - text_size[0] - 10
+                                frame_h, frame_w = disp.shape[:2]
+                                text_x = frame_w - text_size[0] - 10
                                 cv.putText(disp, detail, (text_x, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
                             else:
                                 h, w = disp.shape[:2]
@@ -444,6 +445,7 @@ def generate_frames():
                     # Reset person tracker state for the verified track
                     if person_tracker and person_in_zone:
                         person_tracker.reset_track_state(person_in_zone['track_id'])
+                    continue
                 
                 # Draw frame during display (show verified student info)
                 if state.person_tracking_enabled and person_tracker:
@@ -465,6 +467,7 @@ def generate_frames():
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
     
+    detection_executor.shutdown(wait=False)
     camera.stop()
 
 # ==================== ROUTES ====================

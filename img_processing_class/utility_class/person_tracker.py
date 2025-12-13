@@ -99,8 +99,14 @@ class PersonTracker:
                         'centroid': (cx, cy)
                     })
             
-            # Sort by confidence and limit to max_tracks
-            detections.sort(key=lambda x: x['confidence'], reverse=True)
+            # Sort by: 1) bounding box area (larger = closer), 2) bottom y (tie-breaker)
+            def proximity_score(det):
+                bbox = det['bbox']
+                area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+                bottom_y = bbox[3]
+                return (area, bottom_y)  # Prioritize area, then bottom position
+            
+            detections.sort(key=proximity_score, reverse=True)
             detections = detections[:self.max_tracks]
             
             return detections
