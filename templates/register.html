@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📝 Student Registration</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container register-container">
+        <a href="/" class="back-link">← Back to Scanner</a>
+        <h1>📝 Student Registration</h1>
+        
+        <div class="step-indicator">
+            <div class="step active" id="step1">
+                <span class="step-number">1</span>
+                <span>Fill Details</span>
+            </div>
+            <div class="step" id="step2">
+                <span class="step-number">2</span>
+                <span>Capture Face</span>
+            </div>
+            <div class="step" id="step3">
+                <span class="step-number">3</span>
+                <span>Complete</span>
+            </div>
+        </div>
+        
+        <div class="form-grid">
+            <div class="card">
+                <h2>📋 Student Information</h2>
+                <form id="register-form">
+                    <div class="form-group">
+                        <label>Student ID *</label>
+                        <input type="text" id="student_id" name="student_id" required 
+                               placeholder="e.g., 12345678">
+                        <div class="error-msg" id="student_id_error"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Full Name *</label>
+                        <input type="text" id="name" name="name" required 
+                               placeholder="e.g., John Doe">
+                        <div class="error-msg" id="name_error"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Email *</label>
+                        <input type="email" id="email" name="email" required 
+                               placeholder="e.g., john@student.edu">
+                        <div class="error-msg" id="email_error"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Faculty *</label>
+                        <select id="faculty" name="faculty" required>
+                            <option value="">Select Faculty...</option>
+                            <option value="Computing">Faculty of Computing</option>
+                            <option value="Engineering">Faculty of Engineering</option>
+                            <option value="Business">Faculty of Business</option>
+                            <option value="Science">Faculty of Science</option>
+                            <option value="Arts">Faculty of Arts</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Course *</label>
+                        <input type="text" id="course" name="course" required 
+                               placeholder="e.g., Computer Science">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>CGPA</label>
+                        <input type="number" id="cgpa" name="cgpa" step="0.01" 
+                               min="0" max="4" placeholder="e.g., 3.50">
+                    </div>
+                </form>
+            </div>
+            
+            <div class="card camera-section">
+                <h2>📷 Face Capture</h2>
+                <img id="camera-feed" class="camera-feed" src="" alt="Camera Feed">
+                <div id="capture-status" class="capture-status pending">
+                    ⏳ Fill in details first, then capture your face
+                </div>
+                <button id="capture-btn" class="btn btn-primary" style="margin-top: 15px; width: 100%;" 
+                        onclick="captureFace()" disabled>
+                    📸 Capture Face
+                </button>
+                <button id="submit-btn" class="btn btn-primary" style="margin-top: 10px; width: 100%; background: #2ecc71;" 
+                        onclick="submitRegistration()" disabled>
+                    ✅ Complete Registration
+                </button>
+                <div id="registration-result" class="algo-status" style="display: none;">
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

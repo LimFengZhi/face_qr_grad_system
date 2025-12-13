@@ -13,6 +13,7 @@
         <div class="tabs">
             <button class="tab-btn active" onclick="showTab('scanner')">🎓 Scanner</button>
             <button class="tab-btn" onclick="showTab('queue')">📋 Queue Management</button>
+            <a href="/register" class="tab-btn" style="text-decoration: none;">📝 Register</a>
         </div>
         
         <!-- Scanner Tab -->
@@ -130,6 +131,21 @@
                             When enabled, QR codes will be emailed to students when added to queue.
                         </p>
                     </div>
+                    
+                    <div class="card" style="margin-top:20px;">
+    <h2>🗑️ Delete Student</h2>
+    <div class="add-section">
+        <select id="delete-student-select">
+            <option value="">Select student to delete...</option>
+        </select>
+        <button class="btn btn-danger" onclick="deleteSelectedStudent()" style="width:100%;">
+            🗑️ Delete Permanently
+        </button>
+    </div>
+    <p style="color:#e74c3c; font-size:12px; margin-top:10px;">
+        ⚠️ This will permanently remove the student's database record, face encodings, image, and QR code.
+    </p>
+</div>
                 </div>
             </div>
         </div>

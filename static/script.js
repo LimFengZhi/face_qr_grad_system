@@ -14,6 +14,7 @@ function showTab(tab) {
         loadStudents();
         loadQueue();
         loadStats();
+        loadAllStudentsForDelete();  // Add this line
     }
 }
 
@@ -233,7 +234,7 @@ async function loadQueue() {
     list.innerHTML = '';
     data.queue.forEach((s, i) => {
         const cls = i < data.current_index ? 'queue-item done' : (i === data.current_index ? 'queue-item current' : 'queue-item');
-        const status = i < data.current_index ? '✅' : '⏳';
+        const status = s.attended ? '✅' : '⏳';
         list.innerHTML += `
             <div class="${cls}">
                 <div>
@@ -241,7 +242,9 @@ async function loadQueue() {
                     <span class="id">${s.student_id}</span>
                     <span>${status}</span>
                 </div>
-                <button class="remove-btn" onclick="removeFromQueue(${i})">✕</button>
+                <div class="queue-actions">
+                    <button class="remove-btn" onclick="removeFromQueue(${i})" title="Remove from queue">✕</button>
+                </div>
             </div>
         `;
     });
@@ -324,9 +327,319 @@ async function loadEmailStatus() {
     }
 }
 
-// Update DOMContentLoaded to load email status
+// ==================== REGISTRATION FUNCTIONS ====================
+let regFormValid = false;
+let regFaceCaptured = false;
+
+function initRegistrationPage() {
+    // Check if we're on registration page
+    const cameraFeed = document.getElementById('camera-feed');
+    if (!cameraFeed) return;
+    
+    // Start camera feed - FIX: add /api prefix
+    cameraFeed.src = '/api/register/video_feed?' + Date.now();
+    
+    // Setup validation listeners
+    setupRegistrationValidation();
+}
+
+function setupRegistrationValidation() {
+    const studentIdInput = document.getElementById('student_id');
+    const nameInput = document.getElementById('name');
+    const emailInput = document.getElementById('email');
+    
+    if (!studentIdInput) return;
+    
+    // Validate student ID (check if exists)
+    studentIdInput.addEventListener('blur', async function() {
+        const id = this.value.trim();
+        const errorEl = document.getElementById('student_id_error');
+        
+        if (!id) {
+            this.classList.remove('valid', 'error');
+            errorEl.textContent = '';
+            return;
+        }
+        
+        try {
+            const res = await fetch('/api/register/check_id', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({student_id: id})
+            });
+            const data = await res.json();
+            
+            if (data.valid) {
+                this.classList.remove('error');
+                this.classList.add('valid');
+                errorEl.textContent = '';
+            } else {
+                this.classList.remove('valid');
+                this.classList.add('error');
+                errorEl.textContent = data.error;
+            }
+        } catch (e) {
+            console.error('Error checking student ID:', e);
+        }
+        validateRegistrationForm();
+    });
+    
+    // Validate email format
+    emailInput.addEventListener('blur', function() {
+        const email = this.value.trim();
+        const errorEl = document.getElementById('email_error');
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        
+        if (email && !emailRegex.test(email)) {
+            this.classList.add('error');
+            errorEl.textContent = 'Invalid email format';
+        } else {
+            this.classList.remove('error');
+            errorEl.textContent = '';
+        }
+        validateRegistrationForm();
+    });
+    
+    // Validate name
+    nameInput.addEventListener('blur', function() {
+        const name = this.value.trim();
+        const errorEl = document.getElementById('name_error');
+        
+        if (name && name.length < 2) {
+            this.classList.add('error');
+            errorEl.textContent = 'Name must be at least 2 characters';
+        } else {
+            this.classList.remove('error');
+            errorEl.textContent = '';
+        }
+        validateRegistrationForm();
+    });
+    
+    // Validate form on any input change
+    document.querySelectorAll('#register-form input, #register-form select').forEach(el => {
+        el.addEventListener('input', validateRegistrationForm);
+    });
+}
+
+function validateRegistrationForm() {
+    const studentId = document.getElementById('student_id');
+    const name = document.getElementById('name');
+    const email = document.getElementById('email');
+    const faculty = document.getElementById('faculty');
+    const course = document.getElementById('course');
+    const captureBtn = document.getElementById('capture-btn');
+    const captureStatus = document.getElementById('capture-status');
+    
+    if (!studentId) return;
+    
+    const hasErrors = document.querySelectorAll('.form-group input.error').length > 0;
+    const allFilled = studentId.value && name.value && email.value && 
+                      faculty.value && course.value;
+    
+    regFormValid = allFilled && !hasErrors && studentId.classList.contains('valid');
+    
+    if (captureBtn) {
+        captureBtn.disabled = !regFormValid;
+    }
+    
+    if (regFormValid) {
+        document.getElementById('step1').classList.add('completed');
+        document.getElementById('step2').classList.add('active');
+        if (captureStatus) {
+            captureStatus.textContent = '📷 Position your face and click Capture';
+        }
+    }
+}
+
+async function captureFace() {
+    const studentId = document.getElementById('student_id').value;
+    const statusEl = document.getElementById('capture-status');
+    const cameraFeed = document.getElementById('camera-feed');
+    
+    statusEl.className = 'capture-status pending';
+    statusEl.textContent = '⏳ Capturing face...';
+    
+    try {
+        const res = await fetch('/api/register/capture_face', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({student_id: studentId})
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            regFaceCaptured = true;
+            statusEl.className = 'capture-status success';
+            statusEl.textContent = '✅ ' + data.message;
+            document.getElementById('submit-btn').disabled = false;
+            document.getElementById('step2').classList.add('completed');
+            document.getElementById('step3').classList.add('active');
+            
+            // Show the captured preview image instead of live feed
+            if (data.preview) {
+                cameraFeed.src = data.preview;
+            }
+            
+            // Disable capture button after successful capture
+            document.getElementById('capture-btn').textContent = '✅ Face Captured';
+            document.getElementById('capture-btn').disabled = true;
+        } else {
+            statusEl.className = 'capture-status error';
+            statusEl.textContent = '❌ ' + data.error;
+        }
+    } catch (e) {
+        statusEl.className = 'capture-status error';
+        statusEl.textContent = '❌ Error capturing face';
+        console.error(e);
+    }
+}
+
+async function submitRegistration() {
+    if (!regFormValid || !regFaceCaptured) return;
+    
+    const submitBtn = document.getElementById('submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ Registering...';
+    
+    const formData = {
+        student_id: document.getElementById('student_id').value,
+        name: document.getElementById('name').value,
+        email: document.getElementById('email').value,
+        faculty: document.getElementById('faculty').value,
+        course: document.getElementById('course').value,
+        cgpa: document.getElementById('cgpa').value
+    };
+    
+    try {
+        const res = await fetch('/api/register/submit', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(formData)
+        });
+        const data = await res.json();
+        
+        const resultDiv = document.getElementById('registration-result');
+        resultDiv.style.display = 'block';
+        
+        if (data.success) {
+            document.getElementById('step3').classList.add('completed');
+            
+            // Show algorithm registration status
+            let statusHtml = '<strong>✅ Registration Complete!</strong><br><br>';
+            statusHtml += '<strong>Registered in:</strong><br>';
+            data.registered_algorithms.forEach(algo => {
+                statusHtml += `<span class="success">✓ ${algo}</span><br>`;
+            });
+            
+            if (data.failed_algorithms && data.failed_algorithms.length > 0) {
+                statusHtml += '<br><strong>Warnings:</strong><br>';
+                data.failed_algorithms.forEach(fail => {
+                    statusHtml += `<span class="failed">✗ ${fail}</span><br>`;
+                });
+            }
+            
+            statusHtml += '<br><em>QR code generated in data/qr_codes/</em>';
+            resultDiv.innerHTML = statusHtml;
+            
+            submitBtn.textContent = '✅ Registered!';
+            submitBtn.style.background = '#2ecc71';
+            
+            // Redirect after 3 seconds
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 3000);
+        } else {
+            resultDiv.innerHTML = `<span class="failed">❌ ${data.error}</span>`;
+            if (data.details) {
+                data.details.forEach(d => {
+                    resultDiv.innerHTML += `<br><span class="failed">• ${d}</span>`;
+                });
+            }
+            submitBtn.disabled = false;
+            submitBtn.textContent = '✅ Complete Registration';
+        }
+    } catch (e) {
+        document.getElementById('registration-result').style.display = 'block';
+        document.getElementById('registration-result').innerHTML = '<span class="failed">❌ Error submitting registration</span>';
+        submitBtn.disabled = false;
+        submitBtn.textContent = '✅ Complete Registration';
+        console.error(e);
+    }
+}
+
+// ==================== DELETE STUDENT FUNCTIONS ====================
+
+async function loadAllStudentsForDelete() {
+    try {
+        const res = await fetch('/api/students?show_attended=true');
+        const students = await res.json();
+        
+        const select = document.getElementById('delete-student-select');
+        if (!select) return;
+        
+        select.innerHTML = '<option value="">Select student to delete...</option>';
+        students.forEach(s => {
+            const attended = s.attended ? ' ✅' : '';
+            select.innerHTML += `<option value="${s.student_id}" data-name="${s.name}">${s.name} (${s.student_id})${attended}</option>`;
+        });
+    } catch (e) {
+        console.error('Error loading students for delete:', e);
+    }
+}
+
+async function deleteSelectedStudent() {
+    const select = document.getElementById('delete-student-select');
+    const studentId = select.value;
+    
+    if (!studentId) {
+        alert('Please select a student to delete');
+        return;
+    }
+    
+    const studentName = select.options[select.selectedIndex].dataset.name || studentId;
+    await deleteStudentEntirely(studentId, studentName);
+    
+    // Reload the delete dropdown
+    loadAllStudentsForDelete();
+}
+
+async function deleteStudentEntirely(studentId, studentName) {
+    if (!confirm(`⚠️ Are you sure you want to PERMANENTLY delete ${studentName} (${studentId})?\n\nThis will remove:\n• Database record\n• Face encodings (all algorithms)\n• Student image\n• QR code\n\nThis action cannot be undone!`)) {
+        return;
+    }
+    
+    try {
+        const res = await fetch('/api/student/delete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({student_id: studentId})
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            alert(`✅ ${data.message}`);
+            if (data.warnings && data.warnings.length > 0) {
+                console.warn('Deletion warnings:', data.warnings);
+            }
+            // Refresh all lists
+            loadStudents();
+            loadQueue();
+            loadStats();
+            loadAllStudentsForDelete();
+        } else {
+            alert(`❌ ${data.error}`);
+        }
+    } catch (e) {
+        alert('❌ Error deleting student');
+        console.error(e);
+    }
+}
+
+// Update DOMContentLoaded to also init registration
 document.addEventListener('DOMContentLoaded', function() {
     loadQueue();
     loadStats();
     loadEmailStatus();
+    loadAllStudentsForDelete();  // Add this line
+    initRegistrationPage();
 });
