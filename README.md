@@ -75,14 +75,6 @@
 
 ---
 
-## 📸 Screenshots
-
-<p align="center">
-  <i>Add screenshots of your application here</i>
-</p>
-
----
-
 ## 🔧 Prerequisites
 
 | Requirement | Version | Download |
