@@ -4,7 +4,6 @@ import numpy as np
 import os
 import pickle
 
-
 class FaceRecognitionHogDlib:
     def __init__(self, file_path, confidence, model='hog'):
         self.known_list_encoding = []
@@ -30,6 +29,7 @@ class FaceRecognitionHogDlib:
             'encodings': self.known_list_encoding,
             'ids': self.known_list_ids
         }
+        os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
         with open(self.file_path, 'wb') as f:
             pickle.dump(data, f)
 
@@ -84,5 +84,6 @@ class FaceRecognitionHogDlib:
         self.known_list_ids = []
         if os.path.exists(self.file_path):
             os.remove(self.file_path)
+        
         
         
