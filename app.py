@@ -413,9 +413,14 @@ def generate_frames():
                                     detail = f"Face & QR Matched ({expected_id})"
                                     color = (0, 255, 0)  # Green
                                 
-                                cv.putText(disp, detail, (10, 75), cv.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                                # Draw on top right corner
+                                h, w = disp.shape[:2]
+                                text_size = cv.getTextSize(detail, cv.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                                text_x = w - text_size[0] - 10
+                                cv.putText(disp, detail, (text_x, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
                             else:
-                                cv.putText(disp, "Scanning...", (10, 75), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+                                h, w = disp.shape[:2]
+                                cv.putText(disp, "Scanning...", (w - 150, 50), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
                         else:
                             # No person in zone
                             cv.putText(disp, f"Wait: {student['name']} - No person in zone", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 2)
