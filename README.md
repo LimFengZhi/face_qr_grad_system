@@ -28,6 +28,28 @@
 | 📊 **Attendance Tracking** | SQLite database with comprehensive statistics |
 | 🔄 **Queue Management** | Add, remove, skip students in queue |
 | 🎨 **Color-Coded Feedback** | Green (match), Red (wrong), Orange (unknown) visual indicators |
+| 📝 **Student Registration** | 🆕 Web-based registration with face capture & validation |
+| 🗑️ **Student Management** | 🆕 Delete students (database, encodings, images, QR codes) |
+
+---
+
+## 🆕 New Features (v2.1)
+
+### 📝 Student Registration System
+- **Web-based registration page** at `/register`
+- **3-step registration process**:
+  1. Fill student details (ID, Name, Email, Faculty, Course, CGPA)
+  2. Capture face via webcam
+  3. Complete registration
+- **Multi-algorithm registration**: Face encoded in ALL available algorithms simultaneously
+- **Duplicate detection**: Prevents same face from registering twice
+- **Auto QR generation**: QR code automatically created on registration
+- **Real-time validation**: Student ID uniqueness, email format, required fields
+
+### 🗑️ Student Deletion
+- **Complete removal**: Deletes from database, queue, ALL algorithm encodings, images, and QR codes
+- **Dedicated UI section**: Safe deletion from Queue Management tab
+- **Confirmation dialog**: Prevents accidental deletions
 
 ---
 
@@ -140,7 +162,46 @@ python app.py
 
 Then open your browser: **http://localhost:5000**
 
-### Train Face Encodings
+### Web Interface Pages
+
+| Page | URL | Description |
+|------|-----|-------------|
+| 🎓 Scanner | `/` | Main verification scanner |
+| 📋 Queue Management | `/` (tab) | Manage queue, statistics, delete students |
+| 📝 Registration | `/register` | Register new students |
+
+### Register a New Student
+
+1. Click **"📝 Register"** tab in navigation
+2. Fill in student information:
+   - Student ID (unique, min 5 characters)
+   - Full Name
+   - Email
+   - Faculty (dropdown)
+   - Course
+   - CGPA (optional)
+3. Position face in camera and click **"📸 Capture Face"**
+4. Click **"✅ Complete Registration"**
+5. System will:
+   - Register face in ALL available algorithms
+   - Save student image
+   - Generate QR code
+   - Add to database
+
+### Delete a Student
+
+1. Go to **"📋 Queue Management"** tab
+2. Scroll to **"🗑️ Delete Student"** section
+3. Select student from dropdown
+4. Click **"🗑️ Delete Permanently"**
+5. Confirm deletion
+6. System removes:
+   - Database record
+   - Face encodings (all algorithms)
+   - Student image
+   - QR code
+
+### Train Face Encodings (Batch)
 
 1. Add student images to Image folder (named as `student_id.jpg`)
 2. Update student_list.csv with student information:
@@ -167,7 +228,10 @@ face_qr_grad_system/
 │
 ├── 📂 data/
 │   ├── 📄 student_list.csv      # Student information
+│   ├── 📄 students.db           # SQLite database
 │   ├── 📂 encodings/            # Face encoding files (.pkl)
+│   │   ├── 📂 preprocessed/     # Preprocessed encodings
+│   │   └── 📂 raw/              # Raw encodings
 │   ├── 📂 Image/                # Student photos
 │   ├── 📂 qr_codes/             # Generated QR codes
 │   └── 📂 test_set/             # Test images by person
@@ -183,13 +247,18 @@ face_qr_grad_system/
 │       ├── box_helper.py
 │       ├── camera.py
 │       ├── email_sender.py
-│       ├── person_tracker.py        # 🆕 YOLOv8 person tracking
-│       ├── qr_code_scanner.py       # 🆕 LED-optimized QR scanner
+│       ├── person_tracker.py        # YOLOv8 person tracking
+│       ├── qr_code_scanner.py       # LED-optimized QR scanner
 │       ├── student_database.py
 │       └── text_to_speach.py
 │
 ├── 📂 static/                   # CSS & JavaScript
+│   ├── style.css
+│   └── script.js
+│
 ├── 📂 templates/                # HTML templates
+│   ├── index.html               # Main scanner page
+│   └── register.html            # 🆕 Registration page
 ```
 
 ---
@@ -332,6 +401,47 @@ The QR scanner is specifically designed for real-world LED displays:
 
 ---
 
+## 📝 Registration System
+
+### Registration Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  Registration Process                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Step 1: Fill Details                                       │
+│     • Student ID (validated for uniqueness)                 │
+│     • Name, Email, Faculty, Course, CGPA                    │
+│     ↓                                                       │
+│  Step 2: Capture Face                                       │
+│     • Position face in oval guide                           │
+│     • Click "Capture Face"                                  │
+│     • System checks if face already registered              │
+│     ↓                                                       │
+│  Step 3: Complete Registration                              │
+│     • Face encoded in ALL algorithms                        │
+│     • Image saved to data/Image/                            │
+│     • QR code generated in data/qr_codes/                   │
+│     • Student added to database                             │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Validation Rules
+
+| Field | Validation |
+|-------|------------|
+| Student ID | Required, min 5 chars, must be unique |
+| Name | Required, min 2 chars, letters & spaces only |
+| Email | Valid email format |
+| Faculty | Required (dropdown selection) |
+| Course | Required |
+| CGPA | Optional, 0.00 - 4.00 |
+| Face | Must be detected, not already registered |
+
+---
+
 ## 🎓 Graduation Level
 
 | CGPA | Level |
@@ -363,6 +473,8 @@ SENDER_PASSWORD = "your_app_password"  # Use Gmail App Password
 
 ## 🛠️ API Endpoints
 
+### Scanner & Queue
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Main web interface |
@@ -370,14 +482,39 @@ SENDER_PASSWORD = "your_app_password"  # Use Gmail App Password
 | `/api/start` | POST | Start queue processing |
 | `/api/stop` | POST | Stop queue processing |
 | `/api/skip` | POST | Skip current student |
-| `/api/status` | GET | Get current status (includes person_in_zone) |
+| `/api/status` | GET | Get current status |
 | `/api/queue` | GET | Get queue list |
 | `/api/queue/add` | POST | Add student to queue |
 | `/api/queue/add_all` | POST | Add all students |
 | `/api/queue/clear` | POST | Clear queue |
+| `/api/queue/remove` | POST | Remove from queue |
 | `/api/students` | GET | Get all students |
 | `/api/stats` | GET | Get attendance stats |
 | `/api/reset_attendance` | POST | Reset all attendance |
+
+### Registration (🆕)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/register` | GET | Registration page |
+| `/api/register/check_id` | POST | Check if student ID exists |
+| `/api/register/validate` | POST | Validate form data |
+| `/api/register/capture_face` | POST | Capture & verify face |
+| `/api/register/submit` | POST | Complete registration |
+| `/api/register/video_feed` | GET | Camera feed for registration |
+
+### Student Management (🆕)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/student/delete` | POST | Delete student entirely |
+
+### Email
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/email/toggle` | POST | Enable/disable email |
+| `/api/email/status` | GET | Get email status |
 
 ---
 
@@ -452,6 +589,7 @@ test_set/
 | Face Detection | Every frame | Every 5th frame | **80% CPU** ⬇️ |
 | QR Detection | Sequential | Parallel | **2x faster** ⚡ |
 | Person Tracking | N/A | YOLOv8 real-time | **Zone-based** ✅ |
+| Registration | Single algo | All algos parallel | **Future-proof** 🔒 |
 
 ---
 
@@ -509,5 +647,5 @@ If you encounter any issues:
 </p>
 
 <p align="center">
-  <sub>Version 2.0 - Now with AI Person Tracking & LED-Optimized QR Scanning</sub>
+  <sub>Version 2.1 - Now with Student Registration & Management</sub>
 </p>
