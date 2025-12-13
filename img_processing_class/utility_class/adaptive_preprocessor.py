@@ -23,6 +23,13 @@ class AdaptivePreprocessor:
         gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
         return cv.Laplacian(gray, cv.CV_64F).var()
     
+    def estimate_noise(self, image):
+        """Estimate noise level using median filter difference"""
+        gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+        median = cv.medianBlur(gray, 5)
+        diff = cv.absdiff(gray, median)
+        return np.mean(diff)
+    
     def apply_clahe(self, image, clip_limit=2.0):
         """CLAHE for illumination normalization"""
         lab = cv.cvtColor(image, cv.COLOR_BGR2LAB)
@@ -50,7 +57,14 @@ class AdaptivePreprocessor:
     
     def apply_bilateral_denoise(self, image):
         """Bilateral filter - preserves edges while denoising"""
-        return cv.bilateralFilter(image, 9, 75, 75)
+        return cv.bilateralFilter(image, 5, 50, 50)
+    
+    def normalize_color(self, image):
+        """Normalize color distribution using histogram equalization on YCrCb"""
+        ycrcb = cv.cvtColor(image, cv.COLOR_BGR2YCrCb)
+        y, cr, cb = cv.split(ycrcb)
+        y_eq = cv.equalizeHist(y)
+        return cv.cvtColor(cv.merge((y_eq, cr, cb)), cv.COLOR_YCrCb2BGR)
     
     def process(self, image):
         """Adaptive preprocessing pipeline"""
@@ -59,6 +73,7 @@ class AdaptivePreprocessor:
         brightness = self.estimate_brightness(processed)
         contrast = self.estimate_contrast(processed)
         blur_score = self.estimate_blur(processed)
+        noise_level = self.estimate_noise(processed)
         
         # 1. Fix low light (brightness < 80)
         if brightness < 80:
@@ -72,19 +87,20 @@ class AdaptivePreprocessor:
             processed = self.apply_gamma_correction(processed, gamma)
         
         # 2. Fix low contrast (std < 40)
-        if contrast < 40:
+        if contrast < 35:
             processed = self.apply_clahe(processed, clip_limit=3.0)
-        elif contrast < 60:
+        elif contrast < 55:
             processed = self.apply_clahe(processed, clip_limit=2.0)
         
         # 3. Fix blur (variance < 100 indicates blur)
-        if blur_score < 100:
+        if 80 < blur_score < 300:
             processed = self.apply_unsharp_mask(processed, sigma=1.0, strength=0.8)
-        elif blur_score < 300:
-            processed = self.apply_unsharp_mask(processed, sigma=1.0, strength=0.3)
+        elif 300 <= blur_score < 500:
+            processed = self.apply_unsharp_mask(processed, sigma=1.5, strength=0.5)
         
-        # 4. Light denoise (always helpful)
-        processed = self.apply_bilateral_denoise(processed)
+        
+        if noise_level > 12:  # Only denoise noisy images
+            processed = self.apply_bilateral_denoise(processed)
         
         return processed
     
