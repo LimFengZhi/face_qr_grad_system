@@ -53,7 +53,7 @@ executor = ThreadPoolExecutor(max_workers=4)
 def load_hog_dlib():
     try:
 
-        model = FaceRecognitionHogDlib(file_path="data/encodings/preprocessed/hb_encoding.pkl", confidence=0.6)
+        model = FaceRecognitionHogDlib(file_path="data/encodings/preprocessed/hb_encoding.pkl", confidence=0.5)
         return ("HOG + Dlib", model)
     except Exception as e:
         print(f"HOG + Dlib failed: {e}")
@@ -63,7 +63,7 @@ def load_deepface():
     try:
         model = FaceRecognitionDeepFace(
             file_path="data/encodings/preprocessed/deepface_facenet512.pkl",
-            threshold=0.68, model_name='Facenet512', detector_backend='retinaface'
+            threshold=0.5, model_name='Facenet512', detector_backend='retinaface'
         )
         return ("DeepFace", model)
     except Exception as e:
@@ -905,24 +905,10 @@ def capture_face():
     
     data = request.json
     student_id = data.get('student_id', '').strip()
+    force_register = data.get('force_register', False)  # Allow override for false positives
     
     if not student_id:
         return jsonify({'success': False, 'error': 'Student ID is required'})
-    
-    # Use current algorithm for initial face check
-    algo = state.current_algorithm
-    model = all_models.get(algo)
-    
-    if model is None:
-        # Try to find any available model
-        for name, m in all_models.items():
-            if m is not None:
-                model = m
-                algo = name
-                break
-    
-    if model is None:
-        return jsonify({'success': False, 'error': 'No face recognition model available'})
     
     # Start camera if not running
     if not camera.running:
@@ -933,17 +919,132 @@ def capture_face():
     if frame is None:
         return jsonify({'success': False, 'error': 'Failed to capture frame'})
     
-    # Detect face using current algorithm
-    face_id, face_box, face_detected = detect_face_pipeline(frame, model, algo)
+    # Process frame
+    processed = preprocessor.process(frame)
+    rgb_frame = cv.cvtColor(processed, cv.COLOR_BGR2RGB)
     
-    if not face_detected:
-        return jsonify({'success': False, 'error': 'No face detected. Please position your face in front of the camera.'})
+    # Check ALL algorithms for existing face (not just one)
+    face_detected_any = False
+    existing_matches = []  # Track which algorithms found a match
     
-    if face_id is not None:
+    for algo_name, model in all_models.items():
+        if model is None:
+            continue
+            
+        try:
+            if algo_name == "InsightFace":
+                face_region = model.detect_face(processed)
+                if face_region is None:
+                    continue
+                face_detected_any = True
+                encoding, success = model.recognise_face(processed, face_region)
+                if success:
+                    matched_id, distance, matched = model.compare_encoding(encoding)
+                    if matched and matched_id != student_id:
+                        existing_matches.append({
+                            'algorithm': algo_name,
+                            'matched_id': matched_id,
+                            'distance': float(distance) if distance else None,
+                            'confidence': round((1 - float(distance)) * 100, 1) if distance else None
+                        })
+                        
+            elif algo_name == "MTCNN + FaceNet":
+                face_region = model.detect_face(rgb_frame)
+                if face_region is None:
+                    continue
+                face_detected_any = True
+                encoding, success = model.recognise_face(rgb_frame, face_region)
+                if success:
+                    matched_id, distance, matched = model.compare_encoding(encoding)
+                    if matched and matched_id != student_id:
+                        existing_matches.append({
+                            'algorithm': algo_name,
+                            'matched_id': matched_id,
+                            'distance': float(distance) if distance else None,
+                            'confidence': round((1 - float(distance)) * 100, 1) if distance else None
+                        })
+                        
+            elif algo_name == "DeepFace":
+                face_region = model.detect_face(rgb_frame)
+                if face_region is None:
+                    continue
+                face_detected_any = True
+                encoding, success = model.recognise_face(rgb_frame, face_region)
+                if success:
+                    matched_id, distance, matched = model.compare_encoding(encoding)
+                    if matched and matched_id != student_id:
+                        existing_matches.append({
+                            'algorithm': algo_name,
+                            'matched_id': matched_id,
+                            'distance': float(distance) if distance else None,
+                            'confidence': round((1 - float(distance)) * 100, 1) if distance else None
+                        })
+                        
+            else:  # HOG + Dlib
+                face_loc = model.detect_face(rgb_frame)
+                if face_loc is None or len(face_loc) == 0:
+                    continue
+                face_detected_any = True
+                if isinstance(face_loc, list) and len(face_loc) > 0:
+                    face_loc = max(face_loc, key=lambda f: (f[2] - f[0]) * (f[1] - f[3]))
+                encoding, success = model.recognise_face(
+                    rgb_frame, [face_loc] if isinstance(face_loc, tuple) else face_loc
+                )
+                if success:
+                    matched_id, distance, matched = model.compare_encoding(encoding)
+                    if matched and matched_id != student_id:
+                        existing_matches.append({
+                            'algorithm': algo_name,
+                            'matched_id': matched_id,
+                            'distance': float(distance) if distance else None,
+                            'confidence': round((1 - float(distance)) * 100, 1) if distance else None
+                        })
+                        
+        except Exception as e:
+            print(f"Check error ({algo_name}): {e}")
+            continue
+    
+    if not face_detected_any:
         return jsonify({
             'success': False, 
-            'error': f'This face is already registered as {face_id}. Each person can only register once.',
-            'existing_id': face_id
+            'error': 'No face detected. Please position your face in front of the camera.'
+        })
+    
+    # Check if face is already registered
+    if existing_matches and not force_register:
+        # LOG: Print which algorithms matched
+        print("=" * 50)
+        print(f"⚠️ FACE MATCH DETECTED for student_id: {student_id}")
+        for match in existing_matches:
+            print(f"  - {match['algorithm']}: matched as {match['matched_id']} (distance: {match.get('distance', 'N/A')})")
+        print("=" * 50)
+        
+        # Count how many algorithms matched
+        num_matches = len(existing_matches)
+        total_algos = len([m for m in all_models.values() if m is not None])
+        
+        # Get the most common matched ID
+        matched_ids = [m['matched_id'] for m in existing_matches]
+        most_common_id = max(set(matched_ids), key=matched_ids.count)
+        match_count = matched_ids.count(most_common_id)
+        
+        # If majority of algorithms agree, likely a real match
+        # If only 1-2 algorithms match, might be false positive
+        is_likely_false_positive = match_count <= 1 and total_algos >= 3
+        
+        return jsonify({
+            'success': False,
+            'error': f'Face may already be registered as {most_common_id}',
+            'existing_id': most_common_id,
+            'matches': existing_matches,
+            'match_count': match_count,
+            'total_algorithms': total_algos,
+            'likely_false_positive': is_likely_false_positive,
+            'can_override': is_likely_false_positive,  # Allow override if likely false positive
+            'message': f'Matched in {match_count}/{total_algos} algorithms. ' + 
+                      ('This might be a false positive - you can try again or force register.' 
+                       if is_likely_false_positive else 
+                       'This appears to be a genuine match.')
         })
     
     # Store the captured frame for later submission
@@ -958,7 +1059,6 @@ def capture_face():
     return jsonify({
         'success': True,
         'message': 'Face captured successfully! Click "Complete Registration" to finish.',
-        'face_box': face_box,
         'preview': f'data:image/jpeg;base64,{frame_base64}'
     })
 

@@ -589,6 +589,23 @@ h1 {
     color: white;
 }
 
+.capture-status small {
+    display: block;
+    margin-top: 5px;
+    font-size: 11px;
+}
+
+.capture-status.error {
+    background: #e74c3c;
+    color: white;
+    text-align: left;
+    padding: 15px;
+}
+
+#force-register-btn:hover {
+    background: #e67e22 !important;
+}
+
 /* Responsive for registration */
 @media (max-width: 768px) {
     .form-grid {

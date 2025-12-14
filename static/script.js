@@ -459,10 +459,11 @@ function validateRegistrationForm() {
     }
 }
 
-async function captureFace() {
+async function captureFace(forceRegister = false) {
     const studentId = document.getElementById('student_id').value;
     const statusEl = document.getElementById('capture-status');
     const cameraFeed = document.getElementById('camera-feed');
+    const captureBtn = document.getElementById('capture-btn');
     
     statusEl.className = 'capture-status pending';
     statusEl.textContent = '⏳ Capturing face...';
@@ -471,7 +472,10 @@ async function captureFace() {
         const res = await fetch('/api/register/capture_face', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({student_id: studentId})
+            body: JSON.stringify({
+                student_id: studentId,
+                force_register: forceRegister
+            })
         });
         const data = await res.json();
         
@@ -483,17 +487,65 @@ async function captureFace() {
             document.getElementById('step2').classList.add('completed');
             document.getElementById('step3').classList.add('active');
             
-            // Show the captured preview image instead of live feed
+            // Show the captured preview image
             if (data.preview) {
                 cameraFeed.src = data.preview;
             }
             
-            // Disable capture button after successful capture
-            document.getElementById('capture-btn').textContent = '✅ Face Captured';
-            document.getElementById('capture-btn').disabled = true;
+            // Update capture button
+            captureBtn.textContent = '✅ Face Captured';
+            captureBtn.disabled = true;
+            
+            // Remove force register button if exists
+            const forceBtn = document.getElementById('force-register-btn');
+            if (forceBtn) forceBtn.remove();
+            
         } else {
             statusEl.className = 'capture-status error';
-            statusEl.textContent = '❌ ' + data.error;
+            
+            // Check if it's a potential false positive
+            if (data.likely_false_positive && data.can_override) {
+                statusEl.innerHTML = `
+                    ⚠️ ${data.error}<br>
+                    <small>Matched in ${data.match_count}/${data.total_algorithms} algorithms</small><br>
+                    <small style="color: #ffd700;">This might be a false positive.</small>
+                `;
+                
+                // Show force register button
+                let forceBtn = document.getElementById('force-register-btn');
+                if (!forceBtn) {
+                    forceBtn = document.createElement('button');
+                    forceBtn.id = 'force-register-btn';
+                    forceBtn.className = 'btn btn-secondary';
+                    forceBtn.style.cssText = 'margin-top: 10px; width: 100%; background: #f39c12;';
+                    forceBtn.textContent = '⚠️ Force Register (Override False Positive)';
+                    forceBtn.onclick = () => captureFace(true);
+                    captureBtn.parentNode.insertBefore(forceBtn, captureBtn.nextSibling);
+                }
+                
+                // Also show retry button
+                captureBtn.textContent = '🔄 Try Again';
+                captureBtn.disabled = false;
+                
+            } else if (data.matches && data.matches.length > 0) {
+                // Likely a real match
+                let matchInfo = data.matches.map(m => 
+                    `${m.algorithm}: ${m.matched_id} (${m.confidence || 'N/A'}%)`
+                ).join('<br>');
+                
+                statusEl.innerHTML = `
+                    ❌ ${data.error}<br>
+                    <small><strong>Matches found:</strong></small><br>
+                    <small>${matchInfo}</small>
+                `;
+                
+                // Remove force button if exists (real match, not false positive)
+                const forceBtn = document.getElementById('force-register-btn');
+                if (forceBtn) forceBtn.remove();
+                
+            } else {
+                statusEl.textContent = '❌ ' + data.error;
+            }
         }
     } catch (e) {
         statusEl.className = 'capture-status error';
