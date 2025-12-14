@@ -430,7 +430,6 @@ The QR scanner is specifically designed for real-world LED displays:
 | Faculty | Required (dropdown selection) |
 | Course | Required |
 | CGPA | Optional, 0.00 - 4.00 |
-| Face | Must be detected, not already registered |
 
 ---
 
