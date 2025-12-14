@@ -63,7 +63,7 @@ def load_deepface():
     try:
         model = FaceRecognitionDeepFace(
             file_path="data/encodings/preprocessed/deepface_facenet512.pkl",
-            threshold=0.5, model_name='Facenet512', detector_backend='retinaface'
+            threshold=0.45, model_name='Facenet512', detector_backend='retinaface'
         )
         return ("DeepFace", model)
     except Exception as e:
@@ -84,7 +84,7 @@ def load_insightface():
 def load_mtcnn_facenet():
     try:
         from img_processing_class.fr_algorithm_class.fr_mtcnn_facenet import FaceRecognitionMTCNNFaceNet
-        model = FaceRecognitionMTCNNFaceNet(file_path="data/encodings/preprocessed/mtcnn_facenet.pkl", threshold=0.4)
+        model = FaceRecognitionMTCNNFaceNet(file_path="data/encodings/preprocessed/mtcnn_facenet.pkl", threshold=0.7)
         return ("MTCNN + FaceNet", model)
     except Exception as e:
         print(f"MTCNN + FaceNet failed: {e}")
