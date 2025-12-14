@@ -52,7 +52,7 @@ executor = ThreadPoolExecutor(max_workers=4)
 
 def load_hog_dlib():
     try:
-        model = FaceRecognitionHogDlib(file_path="data/encodings/preprocessed/hb_encoding.pkl", confidence=0.48)
+        model = FaceRecognitionHogDlib(file_path="data/encodings/preprocessed/hb_encoding.pkl", confidence=0.5)
         return ("HOG + Dlib", model)
     except Exception as e:
         print(f"HOG + Dlib failed: {e}")
@@ -73,7 +73,7 @@ def load_insightface():
     try:
         model = FaceRecognitionInsightFace(
             file_path="data/encodings/preprocessed/insightface_buffalo.pkl",
-            threshold=0.35, model_name='buffalo_s', ctx_id=-1
+            threshold=0.3, model_name='buffalo_s', ctx_id=-1
         )
         return ("InsightFace", model)
     except Exception as e:
@@ -83,7 +83,7 @@ def load_insightface():
 def load_mtcnn_facenet():
     try:
         from img_processing_class.fr_algorithm_class.fr_mtcnn_facenet import FaceRecognitionMTCNNFaceNet
-        model = FaceRecognitionMTCNNFaceNet(file_path="data/encodings/preprocessed/mtcnn_facenet.pkl", threshold=0.55)
+        model = FaceRecognitionMTCNNFaceNet(file_path="data/encodings/preprocessed/mtcnn_facenet.pkl", threshold=0.4)
         return ("MTCNN + FaceNet", model)
     except Exception as e:
         print(f"MTCNN + FaceNet failed: {e}")
