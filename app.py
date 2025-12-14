@@ -52,8 +52,7 @@ executor = ThreadPoolExecutor(max_workers=4)
 
 def load_hog_dlib():
     try:
-
-        model = FaceRecognitionHogDlib(file_path="data/encodings/preprocessed/hb_encoding.pkl", confidence=0.45)
+        model = FaceRecognitionHogDlib(file_path="data/encodings/preprocessed/hb_encoding.pkl", confidence=0.48)
         return ("HOG + Dlib", model)
     except Exception as e:
         print(f"HOG + Dlib failed: {e}")
@@ -63,7 +62,7 @@ def load_deepface():
     try:
         model = FaceRecognitionDeepFace(
             file_path="data/encodings/preprocessed/deepface_facenet512.pkl",
-            threshold=0.3, model_name='Facenet512', detector_backend='retinaface'
+            threshold=0.55, model_name='Facenet512', detector_backend='retinaface'
         )
         return ("DeepFace", model)
     except Exception as e:
@@ -84,7 +83,7 @@ def load_insightface():
 def load_mtcnn_facenet():
     try:
         from img_processing_class.fr_algorithm_class.fr_mtcnn_facenet import FaceRecognitionMTCNNFaceNet
-        model = FaceRecognitionMTCNNFaceNet(file_path="data/encodings/preprocessed/mtcnn_facenet.pkl", threshold=0.65)
+        model = FaceRecognitionMTCNNFaceNet(file_path="data/encodings/preprocessed/mtcnn_facenet.pkl", threshold=0.55)
         return ("MTCNN + FaceNet", model)
     except Exception as e:
         print(f"MTCNN + FaceNet failed: {e}")
@@ -791,7 +790,7 @@ def delete_student_entirely():
                 errors.append(f'Image deletion failed: {str(e)}')
     
     # 5. Delete QR code
-    qr_path = f"data/qr_codes/{student_id}.png"
+    qr_path = f"data/qr_codes/qr_{student_id}.png"
     if os.path.exists(qr_path):
         try:
             os.remove(qr_path)
@@ -851,8 +850,8 @@ def validate_registration():
     student_id = data.get('student_id', '').strip()
     if not student_id:
         errors['student_id'] = 'Student ID is required'
-    elif len(student_id) < 5:
-        errors['student_id'] = 'Student ID must be at least 5 characters'
+    elif len(student_id) < 10:
+        errors['student_id'] = 'Student ID must be at least 10 characters'
     elif db.get_student(student_id):
         errors['student_id'] = 'Student ID already exists'
     
@@ -878,8 +877,10 @@ def validate_registration():
     if cgpa is not None and cgpa != '':
         try:
             cgpa_float = float(cgpa)
-            if cgpa_float < 0 or cgpa_float > 4.0:
-                errors['cgpa'] = 'CGPA must be between 0 and 4.0'
+            if cgpa_float < 0:
+                errors['cgpa'] = 'CGPA cannot be negative'
+            elif cgpa_float > 4.0:
+                errors['cgpa'] = 'CGPA cannot exceed 4.0'
         except ValueError:
             errors['cgpa'] = 'CGPA must be a number'
     
@@ -905,7 +906,6 @@ def capture_face():
     
     data = request.json
     student_id = data.get('student_id', '').strip()
-    force_register = data.get('force_register', False)  # Allow override for false positives
     
     if not student_id:
         return jsonify({'success': False, 'error': 'Student ID is required'})
@@ -923,128 +923,34 @@ def capture_face():
     processed = preprocessor.process(frame)
     rgb_frame = cv.cvtColor(processed, cv.COLOR_BGR2RGB)
     
-    # Check ALL algorithms for existing face (not just one)
-    face_detected_any = False
-    existing_matches = []  # Track which algorithms found a match
+    # Check if face is detected
+    face_detected = False
     
     for algo_name, model in all_models.items():
         if model is None:
             continue
-            
         try:
             if algo_name == "InsightFace":
-                face_region = model.detect_face(processed)
-                if face_region is None:
-                    continue
-                face_detected_any = True
-                encoding, success = model.recognise_face(processed, face_region)
-                if success:
-                    matched_id, distance, matched = model.compare_encoding(encoding)
-                    if matched and matched_id != student_id:
-                        existing_matches.append({
-                            'algorithm': algo_name,
-                            'matched_id': matched_id,
-                            'distance': float(distance) if distance else None,
-                            'confidence': round((1 - float(distance)) * 100, 1) if distance else None
-                        })
-                        
-            elif algo_name == "MTCNN + FaceNet":
-                face_region = model.detect_face(rgb_frame)
-                if face_region is None:
-                    continue
-                face_detected_any = True
-                encoding, success = model.recognise_face(rgb_frame, face_region)
-                if success:
-                    matched_id, distance, matched = model.compare_encoding(encoding)
-                    if matched and matched_id != student_id:
-                        existing_matches.append({
-                            'algorithm': algo_name,
-                            'matched_id': matched_id,
-                            'distance': float(distance) if distance else None,
-                            'confidence': round((1 - float(distance)) * 100, 1) if distance else None
-                        })
-                        
-            elif algo_name == "DeepFace":
-                face_region = model.detect_face(rgb_frame)
-                if face_region is None:
-                    continue
-                face_detected_any = True
-                encoding, success = model.recognise_face(rgb_frame, face_region)
-                if success:
-                    matched_id, distance, matched = model.compare_encoding(encoding)
-                    if matched and matched_id != student_id:
-                        existing_matches.append({
-                            'algorithm': algo_name,
-                            'matched_id': matched_id,
-                            'distance': float(distance) if distance else None,
-                            'confidence': round((1 - float(distance)) * 100, 1) if distance else None
-                        })
-                        
+                if model.detect_face(processed) is not None:
+                    face_detected = True
+                    break
+            elif algo_name in ["MTCNN + FaceNet", "DeepFace"]:
+                if model.detect_face(rgb_frame) is not None:
+                    face_detected = True
+                    break
             else:  # HOG + Dlib
                 face_loc = model.detect_face(rgb_frame)
-                if face_loc is None or len(face_loc) == 0:
-                    continue
-                face_detected_any = True
-                if isinstance(face_loc, list) and len(face_loc) > 0:
-                    face_loc = max(face_loc, key=lambda f: (f[2] - f[0]) * (f[1] - f[3]))
-                encoding, success = model.recognise_face(
-                    rgb_frame, [face_loc] if isinstance(face_loc, tuple) else face_loc
-                )
-                if success:
-                    matched_id, distance, matched = model.compare_encoding(encoding)
-                    if matched and matched_id != student_id:
-                        existing_matches.append({
-                            'algorithm': algo_name,
-                            'matched_id': matched_id,
-                            'distance': float(distance) if distance else None,
-                            'confidence': round((1 - float(distance)) * 100, 1) if distance else None
-                        })
-                        
+                if face_loc is not None and len(face_loc) > 0:
+                    face_detected = True
+                    break
         except Exception as e:
-            print(f"Check error ({algo_name}): {e}")
+            print(f"Detection error ({algo_name}): {e}")
             continue
     
-    if not face_detected_any:
+    if not face_detected:
         return jsonify({
             'success': False, 
             'error': 'No face detected. Please position your face in front of the camera.'
-        })
-    
-    # Check if face is already registered
-    if existing_matches and not force_register:
-        # LOG: Print which algorithms matched
-        print("=" * 50)
-        print(f"⚠️ FACE MATCH DETECTED for student_id: {student_id}")
-        for match in existing_matches:
-            print(f"  - {match['algorithm']}: matched as {match['matched_id']} (distance: {match.get('distance', 'N/A')})")
-        print("=" * 50)
-        
-        # Count how many algorithms matched
-        num_matches = len(existing_matches)
-        total_algos = len([m for m in all_models.values() if m is not None])
-        
-        # Get the most common matched ID
-        matched_ids = [m['matched_id'] for m in existing_matches]
-        most_common_id = max(set(matched_ids), key=matched_ids.count)
-        match_count = matched_ids.count(most_common_id)
-        
-        # If majority of algorithms agree, likely a real match
-        # If only 1-2 algorithms match, might be false positive
-        is_likely_false_positive = match_count <= 1 and total_algos >= 3
-        
-        return jsonify({
-            'success': False,
-            'error': f'Face may already be registered as {most_common_id}',
-            'existing_id': most_common_id,
-            'matches': existing_matches,
-            'match_count': match_count,
-            'total_algorithms': total_algos,
-            'likely_false_positive': is_likely_false_positive,
-            'can_override': is_likely_false_positive,  # Allow override if likely false positive
-            'message': f'Matched in {match_count}/{total_algos} algorithms. ' + 
-                      ('This might be a false positive - you can try again or force register.' 
-                       if is_likely_false_positive else 
-                       'This appears to be a genuine match.')
         })
     
     # Store the captured frame for later submission
@@ -1093,85 +999,80 @@ def submit_registration():
     processed = preprocessor.process(frame)
     rgb_frame = cv.cvtColor(processed, cv.COLOR_BGR2RGB)
     
-    # Register face in ALL available algorithms
+    
+    
+    def register_in_algorithm(algo_name, model):
+            """Register face in a single algorithm - runs in thread"""
+            if model is None:
+                return algo_name, False, "Model not loaded"
+            
+            try:
+                if algo_name == "InsightFace":
+                    face_region = model.detect_face(processed)
+                    if face_region is None:
+                        return algo_name, False, "No face detected"
+                    encoding, success = model.recognise_face(processed, face_region)
+                    if not success:
+                        return algo_name, False, "Failed to encode"
+                    model.register_face(encoding, student_id)
+                    return algo_name, True, "Success"
+                    
+                elif algo_name == "MTCNN + FaceNet":
+                    face_region = model.detect_face(rgb_frame)
+                    if face_region is None:
+                        return algo_name, False, "No face detected"
+                    encoding, success = model.recognise_face(rgb_frame, face_region)
+                    if not success:
+                        return algo_name, False, "Failed to encode"
+                    model.register_face(encoding, student_id)
+                    return algo_name, True, "Success"
+                    
+                elif algo_name == "DeepFace":
+                    face_region = model.detect_face(rgb_frame)
+                    if face_region is None:
+                        return algo_name, False, "No face detected"
+                    encoding, success = model.recognise_face(rgb_frame, face_region)
+                    if not success:
+                        return algo_name, False, "Failed to encode"
+                    model.register_face(encoding, student_id)
+                    return algo_name, True, "Success"
+                    
+                else:  # HOG + Dlib
+                    face_loc = model.detect_face(rgb_frame)
+                    if face_loc is None or len(face_loc) == 0:
+                        return algo_name, False, "No face detected"
+                    if isinstance(face_loc, list) and len(face_loc) > 0:
+                        face_loc = max(face_loc, key=lambda f: (f[2] - f[0]) * (f[1] - f[3]))
+                    encoding, success = model.recognise_face(
+                        rgb_frame, [face_loc] if isinstance(face_loc, tuple) else face_loc
+                    )
+                    if not success:
+                        return algo_name, False, "Failed to encode"
+                    model.register_face(encoding, student_id)
+                    return algo_name, True, "Success"
+                    
+            except Exception as e:
+                return algo_name, False, str(e)
+    # Register face in ALL available algorithms (no duplicate check)
     registered_algos = []
     failed_algos = []
-    
-    for algo_name, model in all_models.items():
-        if model is None:
-            continue
-            
-        try:
-            if algo_name == "InsightFace":
-                face_region = model.detect_face(processed)
-                if face_region is None:
-                    failed_algos.append(f"{algo_name}: No face detected")
-                    continue
-                encoding, success = model.recognise_face(processed, face_region)
-                if not success:
-                    failed_algos.append(f"{algo_name}: Failed to encode")
-                    continue
-                matched_id, _, matched = model.compare_encoding(encoding)
-                if matched:
-                    failed_algos.append(f"{algo_name}: Face already registered as {matched_id}")
-                    continue
-                model.register_face(encoding, student_id)
+
+    with ThreadPoolExecutor(max_workers=4) as reg_executor:
+        # Submit all registration tasks
+        futures = {
+            reg_executor.submit(register_in_algorithm, algo_name, model): algo_name
+            for algo_name, model in all_models.items()
+            if model is not None
+        }
+        
+        # Collect results as they complete
+        for future in as_completed(futures):
+            algo_name, success, message = future.result()
+            if success:
                 registered_algos.append(algo_name)
-                
-            elif algo_name == "MTCNN + FaceNet":
-                face_region = model.detect_face(rgb_frame)
-                if face_region is None:
-                    failed_algos.append(f"{algo_name}: No face detected")
-                    continue
-                encoding, success = model.recognise_face(rgb_frame, face_region)
-                if not success:
-                    failed_algos.append(f"{algo_name}: Failed to encode")
-                    continue
-                matched_id, _, matched = model.compare_encoding(encoding)
-                if matched:
-                    failed_algos.append(f"{algo_name}: Face already registered as {matched_id}")
-                    continue
-                model.register_face(encoding, student_id)
-                registered_algos.append(algo_name)
-                
-            elif algo_name == "DeepFace":
-                face_region = model.detect_face(rgb_frame)
-                if face_region is None:
-                    failed_algos.append(f"{algo_name}: No face detected")
-                    continue
-                encoding, success = model.recognise_face(rgb_frame, face_region)
-                if not success:
-                    failed_algos.append(f"{algo_name}: Failed to encode")
-                    continue
-                matched_id, _, matched = model.compare_encoding(encoding)
-                if matched:
-                    failed_algos.append(f"{algo_name}: Face already registered as {matched_id}")
-                    continue
-                model.register_face(encoding, student_id)
-                registered_algos.append(algo_name)
-                
-            else:  # HOG + Dlib
-                face_loc = model.detect_face(rgb_frame)
-                if face_loc is None or len(face_loc) == 0:
-                    failed_algos.append(f"{algo_name}: No face detected")
-                    continue
-                if isinstance(face_loc, list) and len(face_loc) > 0:
-                    face_loc = max(face_loc, key=lambda f: (f[2] - f[0]) * (f[1] - f[3]))
-                encoding, success = model.recognise_face(
-                    rgb_frame, [face_loc] if isinstance(face_loc, tuple) else face_loc
-                )
-                if not success:
-                    failed_algos.append(f"{algo_name}: Failed to encode")
-                    continue
-                matched_id, _, matched = model.compare_encoding(encoding)
-                if matched:
-                    failed_algos.append(f"{algo_name}: Face already registered as {matched_id}")
-                    continue
-                model.register_face(encoding, student_id)
-                registered_algos.append(algo_name)
-                
-        except Exception as e:
-            failed_algos.append(f"{algo_name}: {str(e)}")
+                print(f"✓ Registered {student_id} in {algo_name}")
+            else:
+                failed_algos.append(f"{algo_name}: {message}")
     
     # Must register in at least one algorithm
     if not registered_algos:
@@ -1192,7 +1093,7 @@ def submit_registration():
     # Generate QR code
     try:
         os.makedirs("data/qr_codes", exist_ok=True)
-        qr_path = f"data/qr_codes/{student_id}.png"
+        qr_path = f"data/qr_codes/qr_{student_id}.png"
         qr_scanner.generate_and_save(student_id, qr_path, size=300)
     except Exception as e:
         print(f"Warning: Failed to generate QR code: {e}")

@@ -355,10 +355,11 @@ function setupRegistrationValidation() {
     const studentIdInput = document.getElementById('student_id');
     const nameInput = document.getElementById('name');
     const emailInput = document.getElementById('email');
+    const cgpaInput = document.getElementById('cgpa');
     
     if (!studentIdInput) return;
     
-    // Validate student ID (check if exists)
+    // Validate student ID (check if exists and length)
     studentIdInput.addEventListener('blur', async function() {
         const id = this.value.trim();
         const errorEl = document.getElementById('student_id_error');
@@ -366,6 +367,15 @@ function setupRegistrationValidation() {
         if (!id) {
             this.classList.remove('valid', 'error');
             errorEl.textContent = '';
+            return;
+        }
+        
+        // Check minimum length first
+        if (id.length < 10) {
+            this.classList.remove('valid');
+            this.classList.add('error');
+            errorEl.textContent = 'Student ID must be at least 10 characters';
+            validateRegistrationForm();
             return;
         }
         
@@ -391,6 +401,37 @@ function setupRegistrationValidation() {
         }
         validateRegistrationForm();
     });
+    
+    // Validate CGPA
+    if (cgpaInput) {
+        cgpaInput.addEventListener('blur', function() {
+            const cgpa = this.value.trim();
+            const errorEl = document.getElementById('cgpa_error');
+            
+            if (cgpa === '') {
+                this.classList.remove('error');
+                if (errorEl) errorEl.textContent = '';
+                validateRegistrationForm();
+                return;
+            }
+            
+            const cgpaNum = parseFloat(cgpa);
+            if (isNaN(cgpaNum)) {
+                this.classList.add('error');
+                if (errorEl) errorEl.textContent = 'CGPA must be a number';
+            } else if (cgpaNum < 0) {
+                this.classList.add('error');
+                if (errorEl) errorEl.textContent = 'CGPA cannot be negative';
+            } else if (cgpaNum > 4.0) {
+                this.classList.add('error');
+                if (errorEl) errorEl.textContent = 'CGPA cannot exceed 4.0';
+            } else {
+                this.classList.remove('error');
+                if (errorEl) errorEl.textContent = '';
+            }
+            validateRegistrationForm();
+        });
+    }
     
     // Validate email format
     emailInput.addEventListener('blur', function() {
@@ -459,10 +500,9 @@ function validateRegistrationForm() {
     }
 }
 
-async function captureFace(forceRegister = false) {
+async function captureFace() {
     const studentId = document.getElementById('student_id').value;
     const statusEl = document.getElementById('capture-status');
-    const cameraFeed = document.getElementById('camera-feed');
     const captureBtn = document.getElementById('capture-btn');
     
     statusEl.className = 'capture-status pending';
@@ -472,10 +512,7 @@ async function captureFace(forceRegister = false) {
         const res = await fetch('/api/register/capture_face', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                student_id: studentId,
-                force_register: forceRegister
-            })
+            body: JSON.stringify({ student_id: studentId })
         });
         const data = await res.json();
         
@@ -489,63 +526,15 @@ async function captureFace(forceRegister = false) {
             
             // Show the captured preview image
             if (data.preview) {
-                cameraFeed.src = data.preview;
+                document.getElementById('camera-feed').src = data.preview;
             }
             
             // Update capture button
             captureBtn.textContent = '✅ Face Captured';
             captureBtn.disabled = true;
-            
-            // Remove force register button if exists
-            const forceBtn = document.getElementById('force-register-btn');
-            if (forceBtn) forceBtn.remove();
-            
         } else {
             statusEl.className = 'capture-status error';
-            
-            // Check if it's a potential false positive
-            if (data.likely_false_positive && data.can_override) {
-                statusEl.innerHTML = `
-                    ⚠️ ${data.error}<br>
-                    <small>Matched in ${data.match_count}/${data.total_algorithms} algorithms</small><br>
-                    <small style="color: #ffd700;">This might be a false positive.</small>
-                `;
-                
-                // Show force register button
-                let forceBtn = document.getElementById('force-register-btn');
-                if (!forceBtn) {
-                    forceBtn = document.createElement('button');
-                    forceBtn.id = 'force-register-btn';
-                    forceBtn.className = 'btn btn-secondary';
-                    forceBtn.style.cssText = 'margin-top: 10px; width: 100%; background: #f39c12;';
-                    forceBtn.textContent = '⚠️ Force Register (Override False Positive)';
-                    forceBtn.onclick = () => captureFace(true);
-                    captureBtn.parentNode.insertBefore(forceBtn, captureBtn.nextSibling);
-                }
-                
-                // Also show retry button
-                captureBtn.textContent = '🔄 Try Again';
-                captureBtn.disabled = false;
-                
-            } else if (data.matches && data.matches.length > 0) {
-                // Likely a real match
-                let matchInfo = data.matches.map(m => 
-                    `${m.algorithm}: ${m.matched_id} (${m.confidence || 'N/A'}%)`
-                ).join('<br>');
-                
-                statusEl.innerHTML = `
-                    ❌ ${data.error}<br>
-                    <small><strong>Matches found:</strong></small><br>
-                    <small>${matchInfo}</small>
-                `;
-                
-                // Remove force button if exists (real match, not false positive)
-                const forceBtn = document.getElementById('force-register-btn');
-                if (forceBtn) forceBtn.remove();
-                
-            } else {
-                statusEl.textContent = '❌ ' + data.error;
-            }
+            statusEl.textContent = '❌ ' + data.error;
         }
     } catch (e) {
         statusEl.className = 'capture-status error';
