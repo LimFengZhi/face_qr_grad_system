@@ -53,7 +53,7 @@ executor = ThreadPoolExecutor(max_workers=4)
 def load_hog_dlib():
     try:
 
-        model = FaceRecognitionHogDlib(file_path="data/encodings/preprocessed/hb_encoding.pkl", confidence=0.5)
+        model = FaceRecognitionHogDlib(file_path="data/encodings/preprocessed/hb_encoding.pkl", confidence=0.45)
         return ("HOG + Dlib", model)
     except Exception as e:
         print(f"HOG + Dlib failed: {e}")
@@ -74,7 +74,7 @@ def load_insightface():
     try:
         model = FaceRecognitionInsightFace(
             file_path="data/encodings/preprocessed/insightface_buffalo.pkl",
-            threshold=0.3, model_name='buffalo_s', ctx_id=-1
+            threshold=0.35, model_name='buffalo_s', ctx_id=-1
         )
         return ("InsightFace", model)
     except Exception as e:
