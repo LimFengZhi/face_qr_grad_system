@@ -4,7 +4,8 @@ import threading
 import time
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+import base64
+import numpy as np
 from img_processing_class.utility_class.adaptive_preprocessor import AdaptivePreprocessor
 from img_processing_class.utility_class.qr_code_scanner import QRCodeScanner
 from img_processing_class.utility_class.box_helper import draw_detections
@@ -39,6 +40,8 @@ class AppState:
         self.verified_student = None
         self.email_enabled = False
         self.person_tracking_enabled = True
+        self.registration_frame = None
+        self.registration_student_id = None
         self.lock = threading.Lock()
 
 state = AppState()
@@ -49,8 +52,7 @@ executor = ThreadPoolExecutor(max_workers=4)
 
 def load_hog_dlib():
     try:
-
-        model = FaceRecognitionHogDlib(file_path="data/encodings/preprocessed/hb_encoding.pkl", confidence=0.6)
+        model = FaceRecognitionHogDlib(file_path="data/encodings/preprocessed/hb_encoding.pkl", confidence=0.5)
         return ("HOG + Dlib", model)
     except Exception as e:
         print(f"HOG + Dlib failed: {e}")
@@ -60,7 +62,7 @@ def load_deepface():
     try:
         model = FaceRecognitionDeepFace(
             file_path="data/encodings/preprocessed/deepface_facenet512.pkl",
-            threshold=0.68, model_name='Facenet512', detector_backend='retinaface'
+            threshold=0.55, model_name='Facenet512', detector_backend='retinaface'
         )
         return ("DeepFace", model)
     except Exception as e:
@@ -413,9 +415,15 @@ def generate_frames():
                                     detail = f"Face & QR Matched ({expected_id})"
                                     color = (0, 255, 0)  # Green
                                 
-                                cv.putText(disp, detail, (10, 75), cv.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                                # Draw on top right corner
+                                h, w = disp.shape[:2]
+                                text_size = cv.getTextSize(detail, cv.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                                frame_h, frame_w = disp.shape[:2]
+                                text_x = frame_w - text_size[0] - 10
+                                cv.putText(disp, detail, (text_x, 25), cv.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
                             else:
-                                cv.putText(disp, "Scanning...", (10, 75), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+                                h, w = disp.shape[:2]
+                                cv.putText(disp, "Scanning...", (w - 150, 50), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
                         else:
                             # No person in zone
                             cv.putText(disp, f"Wait: {student['name']} - No person in zone", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 2)
@@ -439,6 +447,7 @@ def generate_frames():
                     # Reset person tracker state for the verified track
                     if person_tracker and person_in_zone:
                         person_tracker.reset_track_state(person_in_zone['track_id'])
+                    continue
                 
                 # Draw frame during display (show verified student info)
                 if state.person_tracking_enabled and person_tracker:
@@ -460,6 +469,7 @@ def generate_frames():
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
     
+    detection_executor.shutdown(wait=False)
     camera.stop()
 
 # ==================== ROUTES ====================
@@ -722,6 +732,437 @@ def email_status():
         'enabled': state.email_enabled
     })
 
+
+@app.route('/api/student/delete', methods=['POST'])
+def delete_student_entirely():
+    """Delete a student entirely - from database, queue, encodings, and images"""
+    global state
+    data = request.json
+    student_id = data.get('student_id')
+    
+    if not student_id:
+        return jsonify({'success': False, 'error': 'Student ID is required'})
+    
+    errors = []
+    
+    # 1. Remove from queue
+    with state.lock:
+        state.queue_list = [s for s in state.queue_list if s['student_id'] != student_id]
+    
+    # 2. Delete from database
+    if not db.delete_student(student_id):
+        errors.append('Database deletion failed or student not found')
+    
+    # 3. Remove face encoding from ALL algorithms
+    for algo_name, model in all_models.items():
+        if model is not None:
+            try:
+                if hasattr(model, 'unregister_face'):
+                    model.unregister_face(student_id)
+                elif hasattr(model, 'known_list_ids'):
+                    # HOG + Dlib style
+                    if student_id in model.known_list_ids:
+                        idx = model.known_list_ids.index(student_id)
+                        model.known_list_ids.pop(idx)
+                        model.known_list_encoding.pop(idx)
+                        model.save_encoding()
+                        print(f"✓ Removed {student_id} from {algo_name}")
+                elif hasattr(model, 'known_ids'):
+                    # Other models style
+                    if student_id in model.known_ids:
+                        idx = model.known_ids.index(student_id)
+                        model.known_ids.pop(idx)
+                        if hasattr(model, 'known_encodings'):
+                            model.known_encodings.pop(idx)
+                        model.save_encoding()
+                        print(f"✓ Removed {student_id} from {algo_name}")
+            except Exception as e:
+                errors.append(f'{algo_name}: {str(e)}')
+    
+    # 4. Delete student image
+    for ext in ['.jpg', '.png', '.jpeg', '.JPG', '.PNG']:
+        img_path = f"data/Image/{student_id}{ext}"
+        if os.path.exists(img_path):
+            try:
+                os.remove(img_path)
+                print(f"✓ Deleted image: {img_path}")
+            except Exception as e:
+                errors.append(f'Image deletion failed: {str(e)}')
+    
+    # 5. Delete QR code
+    qr_path = f"data/qr_codes/qr_{student_id}.png"
+    if os.path.exists(qr_path):
+        try:
+            os.remove(qr_path)
+            print(f"✓ Deleted QR: {qr_path}")
+        except Exception as e:
+            errors.append(f'QR deletion failed: {str(e)}')
+    
+    if errors:
+        return jsonify({
+            'success': True, 
+            'message': f'Student {student_id} deleted with some warnings',
+            'warnings': errors
+        })
+    
+    return jsonify({
+        'success': True, 
+        'message': f'Student {student_id} completely deleted'
+    })
+
+
+# ==================== REGISTRATION ROUTES ====================
+
+@app.route('/register')
+def register_page():
+    """Registration page"""
+    return render_template('register.html', algorithms=available_algorithms)
+
+@app.route('/api/register/check_id', methods=['POST'])
+def check_student_id():
+    """Check if student ID already exists"""
+    data = request.json
+    student_id = data.get('student_id', '').strip()
+    
+    if not student_id:
+        return jsonify({'valid': False, 'error': 'Student ID is required'})
+    
+    # Check if already registered in database
+    existing = db.get_student(student_id)
+    if existing:
+        return jsonify({'valid': False, 'error': 'Student ID already registered', 'exists': True})
+    
+    # Check if face encoding already exists for this ID
+    algo = state.current_algorithm
+    model = all_models.get(algo)
+    if model and student_id in getattr(model, 'known_list_ids', getattr(model, 'known_ids', [])):
+        return jsonify({'valid': False, 'error': 'Face already registered for this ID', 'face_exists': True})
+    
+    return jsonify({'valid': True})
+
+@app.route('/api/register/validate', methods=['POST'])
+def validate_registration():
+    """Validate registration form data"""
+    data = request.json
+    errors = {}
+    
+    # Student ID validation
+    student_id = data.get('student_id', '').strip()
+    if not student_id:
+        errors['student_id'] = 'Student ID is required'
+    elif len(student_id) < 10:
+        errors['student_id'] = 'Student ID must be at least 10 characters'
+    elif db.get_student(student_id):
+        errors['student_id'] = 'Student ID already exists'
+    
+    # Name validation
+    name = data.get('name', '').strip()
+    if not name:
+        errors['name'] = 'Name is required'
+    elif len(name) < 2:
+        errors['name'] = 'Name must be at least 2 characters'
+    elif not all(c.isalpha() or c.isspace() for c in name):
+        errors['name'] = 'Name can only contain letters and spaces'
+    
+    # Email validation
+    email = data.get('email', '').strip()
+    if email:
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email):
+            errors['email'] = 'Invalid email format'
+    
+    # CGPA validation
+    cgpa = data.get('cgpa')
+    if cgpa is not None and cgpa != '':
+        try:
+            cgpa_float = float(cgpa)
+            if cgpa_float < 0:
+                errors['cgpa'] = 'CGPA cannot be negative'
+            elif cgpa_float > 4.0:
+                errors['cgpa'] = 'CGPA cannot exceed 4.0'
+        except ValueError:
+            errors['cgpa'] = 'CGPA must be a number'
+    
+    # Faculty validation
+    faculty = data.get('faculty', '').strip()
+    if not faculty:
+        errors['faculty'] = 'Faculty is required'
+    
+    # Course validation
+    course = data.get('course', '').strip()
+    if not course:
+        errors['course'] = 'Course is required'
+    
+    if errors:
+        return jsonify({'valid': False, 'errors': errors})
+    
+    return jsonify({'valid': True})
+
+@app.route('/api/register/capture_face', methods=['POST'])
+def capture_face():
+    """Capture face from camera for registration - stores frame for later use"""
+    global state
+    
+    data = request.json
+    student_id = data.get('student_id', '').strip()
+    
+    if not student_id:
+        return jsonify({'success': False, 'error': 'Student ID is required'})
+    
+    # Start camera if not running
+    if not camera.running:
+        camera.start()
+        time.sleep(0.5)
+    
+    frame = camera.read()
+    if frame is None:
+        return jsonify({'success': False, 'error': 'Failed to capture frame'})
+    
+    # Process frame
+    processed = preprocessor.process(frame)
+    rgb_frame = cv.cvtColor(processed, cv.COLOR_BGR2RGB)
+    
+    # Check if face is detected
+    face_detected = False
+    
+    for algo_name, model in all_models.items():
+        if model is None:
+            continue
+        try:
+            if algo_name == "InsightFace":
+                if model.detect_face(processed) is not None:
+                    face_detected = True
+                    break
+            elif algo_name in ["MTCNN + FaceNet", "DeepFace"]:
+                if model.detect_face(rgb_frame) is not None:
+                    face_detected = True
+                    break
+            else:  # HOG + Dlib
+                face_loc = model.detect_face(rgb_frame)
+                if face_loc is not None and len(face_loc) > 0:
+                    face_detected = True
+                    break
+        except Exception as e:
+            print(f"Detection error ({algo_name}): {e}")
+            continue
+    
+    if not face_detected:
+        return jsonify({
+            'success': False, 
+            'error': 'No face detected. Please position your face in front of the camera.'
+        })
+    
+    # Store the captured frame for later submission
+    with state.lock:
+        state.registration_frame = frame.copy()
+        state.registration_student_id = student_id
+    
+    # Encode frame as base64 for preview
+    _, buffer = cv.imencode('.jpg', frame)
+    frame_base64 = base64.b64encode(buffer).decode('utf-8')
+    
+    return jsonify({
+        'success': True,
+        'message': 'Face captured successfully! Click "Complete Registration" to finish.',
+        'preview': f'data:image/jpeg;base64,{frame_base64}'
+    })
+
+@app.route('/api/register/submit', methods=['POST'])
+def submit_registration():
+    """Submit registration using the previously captured frame"""
+    global state
+    
+    data = request.json
+    student_id = data.get('student_id', '').strip()
+    name = data.get('name', '').strip()
+    email = data.get('email', '').strip()
+    cgpa = data.get('cgpa')
+    faculty = data.get('faculty', '').strip()
+    course = data.get('course', '').strip()
+    
+    # Final validation
+    if not student_id or not name or not faculty or not course:
+        return jsonify({'success': False, 'error': 'Missing required fields'})
+    
+    # Check if already exists
+    if db.get_student(student_id):
+        return jsonify({'success': False, 'error': 'Student ID already registered'})
+    
+    # Get the stored captured frame
+    with state.lock:
+        if state.registration_frame is None or state.registration_student_id != student_id:
+            return jsonify({'success': False, 'error': 'Please capture your face first'})
+        frame = state.registration_frame.copy()
+    
+    # Process frame
+    processed = preprocessor.process(frame)
+    rgb_frame = cv.cvtColor(processed, cv.COLOR_BGR2RGB)
+    
+    
+    
+    def register_in_algorithm(algo_name, model):
+            """Register face in a single algorithm - runs in thread"""
+            if model is None:
+                return algo_name, False, "Model not loaded"
+            
+            try:
+                if algo_name == "InsightFace":
+                    face_region = model.detect_face(processed)
+                    if face_region is None:
+                        return algo_name, False, "No face detected"
+                    encoding, success = model.recognise_face(processed, face_region)
+                    if not success:
+                        return algo_name, False, "Failed to encode"
+                    model.register_face(encoding, student_id)
+                    return algo_name, True, "Success"
+                    
+                elif algo_name == "MTCNN + FaceNet":
+                    face_region = model.detect_face(rgb_frame)
+                    if face_region is None:
+                        return algo_name, False, "No face detected"
+                    encoding, success = model.recognise_face(rgb_frame, face_region)
+                    if not success:
+                        return algo_name, False, "Failed to encode"
+                    model.register_face(encoding, student_id)
+                    return algo_name, True, "Success"
+                    
+                elif algo_name == "DeepFace":
+                    face_region = model.detect_face(rgb_frame)
+                    if face_region is None:
+                        return algo_name, False, "No face detected"
+                    encoding, success = model.recognise_face(rgb_frame, face_region)
+                    if not success:
+                        return algo_name, False, "Failed to encode"
+                    model.register_face(encoding, student_id)
+                    return algo_name, True, "Success"
+                    
+                else:  # HOG + Dlib
+                    face_loc = model.detect_face(rgb_frame)
+                    if face_loc is None or len(face_loc) == 0:
+                        return algo_name, False, "No face detected"
+                    if isinstance(face_loc, list) and len(face_loc) > 0:
+                        face_loc = max(face_loc, key=lambda f: (f[2] - f[0]) * (f[1] - f[3]))
+                    encoding, success = model.recognise_face(
+                        rgb_frame, [face_loc] if isinstance(face_loc, tuple) else face_loc
+                    )
+                    if not success:
+                        return algo_name, False, "Failed to encode"
+                    model.register_face(encoding, student_id)
+                    return algo_name, True, "Success"
+                    
+            except Exception as e:
+                return algo_name, False, str(e)
+    # Register face in ALL available algorithms (no duplicate check)
+    registered_algos = []
+    failed_algos = []
+
+    with ThreadPoolExecutor(max_workers=4) as reg_executor:
+        # Submit all registration tasks
+        futures = {
+            reg_executor.submit(register_in_algorithm, algo_name, model): algo_name
+            for algo_name, model in all_models.items()
+            if model is not None
+        }
+        
+        # Collect results as they complete
+        for future in as_completed(futures):
+            algo_name, success, message = future.result()
+            if success:
+                registered_algos.append(algo_name)
+                print(f"✓ Registered {student_id} in {algo_name}")
+            else:
+                failed_algos.append(f"{algo_name}: {message}")
+    
+    # Must register in at least one algorithm
+    if not registered_algos:
+        return jsonify({
+            'success': False, 
+            'error': 'Failed to register face in any algorithm',
+            'details': failed_algos
+        })
+    
+    # Save student image (use the captured frame)
+    try:
+        os.makedirs("data/Image", exist_ok=True)
+        img_path = f"data/Image/{student_id}.jpg"
+        cv.imwrite(img_path, frame)
+    except Exception as e:
+        print(f"Warning: Failed to save student image: {e}")
+    
+    # Generate QR code
+    try:
+        os.makedirs("data/qr_codes", exist_ok=True)
+        qr_path = f"data/qr_codes/qr_{student_id}.png"
+        qr_scanner.generate_and_save(student_id, qr_path, size=300)
+    except Exception as e:
+        print(f"Warning: Failed to generate QR code: {e}")
+    
+    # Add to database
+    cgpa_float = float(cgpa) if cgpa else None
+    success = db.add_student(
+        student_id=student_id,
+        name=name,
+        cgpa=cgpa_float,
+        faculty=faculty,
+        course=course,
+        email=email
+    )
+    
+    if not success:
+        return jsonify({'success': False, 'error': 'Failed to save to database'})
+    
+    # Clear the stored registration frame
+    with state.lock:
+        state.registration_frame = None
+        state.registration_student_id = None
+    
+    return jsonify({
+        'success': True,
+        'message': f'Successfully registered {name} ({student_id})',
+        'registered_algorithms': registered_algos,
+        'failed_algorithms': failed_algos,
+        'student': {
+            'student_id': student_id,
+            'name': name,
+            'email': email,
+            'cgpa': cgpa_float,
+            'faculty': faculty,
+            'course': course
+        }
+    })
+
+@app.route('/api/register/video_feed')
+def register_video_feed():
+    """Video feed for registration page"""
+    def generate():
+        if not camera.running:
+            camera.start()
+        
+        while True:
+            frame = camera.read()
+            if frame is None:
+                time.sleep(0.03)
+                continue
+            
+            # Draw face detection guide
+            h, w = frame.shape[:2]
+            center_x, center_y = w // 2, h // 2
+            box_size = min(w, h) // 3
+            
+            # Draw oval guide
+            cv.ellipse(frame, (center_x, center_y), (box_size, int(box_size * 1.3)), 
+                      0, 0, 360, (0, 255, 255), 2)
+            cv.putText(frame, "Position face inside oval", (center_x - 120, center_y + box_size + 40),
+                      cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            
+            _, buffer = cv.imencode('.jpg', frame, [cv.IMWRITE_JPEG_QUALITY, 80])
+            frame_bytes = buffer.tobytes()
+            
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+    
+    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == '__main__':
     app.run(debug=False, threaded=True, host='0.0.0.0', port=5000)

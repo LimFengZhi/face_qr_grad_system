@@ -17,12 +17,11 @@ class FaceRecognitionDeepFace:
         
         print(f"Loading {model_name} model...")
         try:
-            # Updated warm-up for newer DeepFace versions
             dummy_img = np.zeros((160, 160, 3), dtype=np.uint8)
             DeepFace.represent(
                 dummy_img, 
                 model_name=model_name, 
-                detector_backend='skip',  # Skip detection for dummy image
+                detector_backend='skip',
                 enforce_detection=False
             )
             print(f"✓ DeepFace initialized: {model_name} + {detector_backend}")
